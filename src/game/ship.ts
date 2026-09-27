@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { ControlMode, ShipLoadout } from '../types';
 import { DynamicColor } from './colors';
-import { DIRECT, SHIP } from './constants';
+import { DIRECT, SHIP, TOUCH_FLY } from './constants';
 import { wrapCoord } from './graphics';
 import type { Particles } from './particles';
 import { buildShipModel, type ShipModel } from './shipModels';
@@ -22,6 +22,10 @@ export interface Controls {
   stickX: number;
   stickY: number;
   stickActive: boolean;
+  /** Touch 'tapdrag': a finger is down and the ship should fly to (flyX, flyY) in world units. */
+  flyActive: boolean;
+  flyX: number;
+  flyY: number;
 }
 
 const SHIELD_VERT = /* glsl */ `
@@ -131,10 +135,59 @@ export class Ship {
    * The touch joystick (turn toward the stick + thrust) works the same in both modes.
    */
   fly(dt: number, c: Controls, halfW: number, halfH: number, mode: ControlMode = 'rotate'): void {
-    if (mode === 'direct' && !c.stickActive) this.flyDirect(dt, c);
+    if (c.flyActive) this.flyToward(dt, c);
+    else if (this.touchCoast && !c.stickActive && c.thrust === 0 && c.moveX === 0 && c.moveY === 0) this.coast(dt, c);
+    else if (mode === 'direct' && !c.stickActive) this.flyDirect(dt, c);
     else this.flyRotate(dt, c);
+    this.touchCoast = c.flyActive || (this.touchCoast && !c.stickActive && c.thrust === 0 && c.moveX === 0 && c.moveY === 0);
     this.pos.x = wrapCoord(this.pos.x + this.vel.x * dt, halfW, 2);
     this.pos.y = wrapCoord(this.pos.y + this.vel.y * dt, halfH, 2);
+  }
+
+  /** True after a touch-fly until other input takes over: the ship glides to a gentle stop. */
+  private touchCoast = false;
+
+  /** Arrive-style steering toward the finger: full speed far away, easing in close. */
+  private flyToward(dt: number, c: Controls): void {
+    const mult = this.agile ? SHIP.agileMult : 1;
+    const dx = c.flyX - this.pos.x;
+    const dy = c.flyY - this.pos.y;
+    const dist = Math.hypot(dx, dy);
+    const want = Math.min(TOUCH_FLY.maxSpeed * mult, dist * TOUCH_FLY.arriveGain);
+    const wx = dist > 1e-3 ? (dx / dist) * want : 0;
+    const wy = dist > 1e-3 ? (dy / dist) * want : 0;
+    // steer: accelerate the velocity toward the desired velocity (capped)
+    let ax = (wx - this.vel.x) * 6;
+    let ay = (wy - this.vel.y) * 6;
+    const al = Math.hypot(ax, ay);
+    const amax = TOUCH_FLY.accel * mult;
+    if (al > amax) {
+      ax = (ax / al) * amax;
+      ay = (ay / al) * amax;
+    }
+    this.vel.x += ax * dt;
+    this.vel.y += ay * dt;
+    this.thrustAmt = dist > TOUCH_FLY.settleDist ? Math.min(1, want / 12) : 0;
+    let turn = 0;
+    if (c.turn !== 0) {
+      // tap-to-target (another finger tapped a rock) takes over the facing
+      this.angle += c.turn * SHIP.turnRate * mult * dt;
+      turn = THREE.MathUtils.clamp(c.turn, -1, 1);
+    } else if (dist > TOUCH_FLY.settleDist && want > 1) {
+      const d = angleDiff(this.angle, Math.atan2(-wx, wy));
+      const step = TOUCH_FLY.turnRate * mult * dt;
+      this.angle += THREE.MathUtils.clamp(d, -step, step);
+      turn = THREE.MathUtils.clamp(d * 2, -1, 1);
+    }
+    this.turnAmt = turn;
+  }
+
+  /** Finger lifted after touch-flying: gentle drag; tap-to-target may still turn the ship. */
+  private coast(dt: number, c: Controls): void {
+    this.vel.multiplyScalar(Math.exp(-(TOUCH_FLY.releaseDrag + c.brake * SHIP.brakeDrag) * dt));
+    this.thrustAmt = 0;
+    this.turnAmt = THREE.MathUtils.clamp(c.turn, -1, 1);
+    if (c.turn !== 0) this.angle += c.turn * SHIP.turnRate * (this.agile ? SHIP.agileMult : 1) * dt;
   }
 
   private flyDirect(dt: number, c: Controls): void {

@@ -6,8 +6,9 @@ const SHIELD_SVG =
 export type ShieldState = 'none' | 'up' | 'used';
 
 /** Controls the hint can teach; each chip fades once the player has used it. */
-export type HintPart = 'fly' | 'turn' | 'brake' | 'move' | 'fire' | 'stick';
-export type HintKind = 'rotate' | 'direct' | 'touch';
+export type HintPart = 'fly' | 'turn' | 'brake' | 'move' | 'fire' | 'stick' | 'drag';
+/** 'touch' = joystick touch mode, 'tapdrag' = tap/drag touch mode. */
+export type HintKind = 'rotate' | 'direct' | 'touch' | 'tapdrag';
 
 // Arrows are drawn as SVG so the keycaps look the same everywhere (no emoji fonts).
 const arrow = (rot: number) =>
@@ -27,6 +28,10 @@ const HINT_HTML: Record<HintKind, string> = {
   direct: `<div class="mt-hint-bar">${[
     part('move', `${key(ARROW.up, false, 'Up')}${key(ARROW.down, false, 'Down')}${key(ARROW.left, false, 'Left')}${key(ARROW.right, false, 'Right')} Move`),
     part('fire', `${key('Space', true)} Fire`),
+  ].join('')}</div>`,
+  tapdrag: `<div class="mt-hint-bar mt-hint-bar--touch">${[
+    part('drag', `<span class="mt-hint-finger" aria-hidden="true"></span>Drag to fly`),
+    part('fire', `<span class="mt-hint-tapdot" aria-hidden="true"></span>Tap a rock to shoot`),
   ].join('')}</div>`,
   touch: `
     <div class="mt-hint-touch mt-hint-touch--stick mt-hint-part" data-part="stick">
@@ -100,7 +105,7 @@ export class Hud {
   /** Show the controls hint (bottom-center for keys, next to the touch controls on touch). */
   showHint(kind: HintKind): void {
     this.hintEl.innerHTML = HINT_HTML[kind];
-    this.hintEl.className = `mt-hint mt-hint--${kind === 'touch' ? 'touch' : 'keys'} mt-hint--on`;
+    this.hintEl.className = `mt-hint mt-hint--${kind === 'touch' || kind === 'tapdrag' ? 'touch' : 'keys'} mt-hint--on`;
     this.hintParts.clear();
     this.hintEl.querySelectorAll<HTMLElement>('[data-part]').forEach((el) => {
       this.hintParts.set(el.dataset.part as HintPart, el);

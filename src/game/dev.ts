@@ -3,7 +3,7 @@
  * Stub question provider (addition facts), console audio, loadout switcher.
  */
 import { CATALOG } from '../catalog';
-import type { AudioBus, ControlMode, LevelConfig, LevelOptions, Question, QuestionProvider, ShipLoadout } from '../types';
+import type { AudioBus, ControlMode, LevelConfig, LevelOptions, Question, QuestionProvider, ShipLoadout, TouchMode } from '../types';
 import { createGame } from './index';
 
 const logEl = () => document.getElementById('dev-log');
@@ -82,6 +82,7 @@ panel.innerHTML = `
   <label>Speed <input id="d-speed" type="number" value="3" min="1" max="20" step="0.5"></label>
   <label>Max asteroids <input id="d-max" type="number" value="8" min="1" max="40"></label>
   <label>Controls <select id="d-mode"><option value="rotate">Rotate (classic)</option><option value="direct">Direct (8-way)</option></select></label>
+  <label>Touch <select id="d-touch"><option value="tapdrag">Tap &amp; drag</option><option value="joystick">Joystick</option></select></label>
   <label>Controls hint <input id="d-hint" type="checkbox" checked></label>
   <div class="row">
     <button id="d-start">Start level</button>
@@ -116,6 +117,7 @@ const num = (id: string) => Number($<HTMLInputElement>(id).value);
 function levelOptions(): LevelOptions {
   return {
     controlMode: $<HTMLSelectElement>('d-mode').value as ControlMode,
+    touchMode: $<HTMLSelectElement>('d-touch').value as TouchMode,
     showControlsHint: $<HTMLInputElement>('d-hint').checked,
   };
 }
@@ -191,9 +193,11 @@ if (hb !== null) {
   const b = params.get('body');
   if (b) $<HTMLSelectElement>('d-body').value = b;
   if (params.get('shield')) (document.querySelector('.d-perk[value=shield]') as HTMLInputElement).checked = true;
-  // ?mode=direct  ?hint=0  ?count=5  ?speed=4  ?laser=twin
+  // ?mode=direct  ?touch=joystick  ?hint=0  ?count=5  ?speed=4  ?laser=twin
   const m = params.get('mode');
   if (m === 'direct' || m === 'rotate') $<HTMLSelectElement>('d-mode').value = m;
+  const tm = params.get('touch');
+  if (tm === 'joystick' || tm === 'tapdrag') $<HTMLSelectElement>('d-touch').value = tm;
   if (params.get('hint') === '0') $<HTMLInputElement>('d-hint').checked = false;
   for (const k of ['count', 'speed'] as const) {
     const v = params.get(k);

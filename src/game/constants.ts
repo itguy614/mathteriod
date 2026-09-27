@@ -44,6 +44,30 @@ export const LASER = {
   cullMargin: 1.5,
 } as const;
 
+/** Touch gestures (LevelOptions.touchMode). */
+export const TOUCH = {
+  /** A touch on a rock is a tap only if it ends within this time and movement. */
+  tapMs: 300,
+  tapSlopPx: 14,
+  /** Extra CSS px around a rock that still counts as touching it (fingers are big). */
+  rockPadPx: 36,
+  /** Joystick: capture circle = stick radius × this; movement needed before it drives. */
+  stickZoneMult: 1.45,
+  stickArmPx: 10,
+} as const;
+
+/** 'tapdrag' flying: the ship steers toward the finger and arrives without orbiting. */
+export const TOUCH_FLY = {
+  accel: 70, // max steering acceleration, units/s^2
+  maxSpeed: 40,
+  /** Desired speed = distance × this (so it slows down as it gets close). */
+  arriveGain: 2.6,
+  /** Inside this distance the ship just settles (no turning to face tiny moves). */
+  settleDist: 1.2,
+  releaseDrag: 2.2, // gentle stop when the finger lifts
+  turnRate: 10, // rad/s, faces its direction of travel
+} as const;
+
 /** Faint dotted line from the nose showing where shots go. */
 export const AIM_GUIDE = {
   length: 40, // world units (the screen is 100 wide)

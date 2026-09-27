@@ -2,6 +2,7 @@
 
 .mt-root {
   overflow: hidden;
+  -webkit-touch-callout: none;
   touch-action: none;
   -webkit-user-select: none;
   user-select: none;
@@ -49,6 +50,11 @@
   border: 2px solid var(--mt-edge);
   box-shadow: 0 0 14px rgba(80, 160, 255, 0.25);
 }
+
+/* corner widgets swallow touches so gameplay gestures never start under them */
+.mt-hud-hull,
+.mt-hud-right,
+.mt-hud-level { pointer-events: auto; }
 
 .mt-hud-hull {
   top: max(12px, env(safe-area-inset-top));
@@ -294,7 +300,7 @@
 /* sits above the joystick's resting spot (see .mt-stick-base) */
 .mt-hint-touch--stick {
   left: max(20px, env(safe-area-inset-left));
-  bottom: calc(max(0px, env(safe-area-inset-bottom)) + 200px);
+  bottom: calc(max(14px, env(safe-area-inset-bottom)) + 150px);
   animation: mt-hint-nudge 1.6s ease-in-out infinite;
 }
 .mt-hint-finger {
@@ -312,6 +318,17 @@
   right: max(16px, env(safe-area-inset-right));
   bottom: calc(max(28px, env(safe-area-inset-bottom)) + 132px);
 }
+.mt-hint-bar--touch { font-size: clamp(17px, 3.4vw, 26px); }
+.mt-hint-tapdot {
+  display: inline-block;
+  width: 0.8em;
+  height: 0.8em;
+  margin-right: 0.35em;
+  border-radius: 50%;
+  border: 3px solid #ff9dd9;
+  box-sizing: border-box;
+  vertical-align: -0.05em;
+}
 @keyframes mt-hint-nudge {
   0%, 100% { transform: translateY(0); }
   50% { transform: translateY(-5px); }
@@ -328,53 +345,95 @@
 }
 .mt-touch--on { display: block; }
 
+.mt-touch {
+  --mt-stick: 120px; /* joystick base diameter */
+  --mt-stick-zone: 174px; /* capture circle (TOUCH.stickZoneMult × base) */
+  --mt-fire: 118px;
+}
+.mt-touch--tapdrag { --mt-fire: 96px; }
+
+/* joystick mode: a small fixed stick in the bottom-left corner; only a modest
+   circle around it captures touches */
 .mt-stick-zone {
   position: absolute;
-  left: 0;
-  bottom: 0;
-  width: 50%;
-  height: 70%;
+  left: calc(max(14px, env(safe-area-inset-left)) + var(--mt-stick) / 2 - var(--mt-stick-zone) / 2 + 8px);
+  bottom: calc(max(14px, env(safe-area-inset-bottom)) + var(--mt-stick) / 2 - var(--mt-stick-zone) / 2 + 8px);
+  width: var(--mt-stick-zone);
+  height: var(--mt-stick-zone);
+  border-radius: 50%;
   pointer-events: auto;
   touch-action: none;
+  display: none;
 }
+.mt-touch--joystick .mt-stick-zone { display: block; }
 .mt-stick-base {
   position: absolute;
-  left: 110px;
-  top: calc(100% - 120px);
-  width: 140px;
-  height: 140px;
-  margin: -70px 0 0 -70px;
+  left: 50%;
+  top: 50%;
+  width: var(--mt-stick);
+  height: var(--mt-stick);
+  margin: calc(var(--mt-stick) / -2) 0 0 calc(var(--mt-stick) / -2);
+  box-sizing: border-box;
   border-radius: 50%;
-  border: 3px solid rgba(160, 220, 255, 0.45);
-  background: radial-gradient(circle, rgba(80, 140, 255, 0.18), rgba(20, 30, 70, 0.25));
-  opacity: 0.55;
+  border: 3px solid rgba(160, 220, 255, 0.55);
+  background: radial-gradient(circle, rgba(80, 140, 255, 0.16), rgba(20, 30, 70, 0.28));
+  opacity: 0.6;
   transition: opacity 0.15s;
+  pointer-events: none;
 }
 .mt-stick-base--on { opacity: 1; transition: none; }
 .mt-stick-knob {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 62px;
-  height: 62px;
+  width: 52px;
+  height: 52px;
   transform: translate(-50%, -50%);
   border-radius: 50%;
   background: radial-gradient(circle at 35% 35%, #ffffff, #8fe9ff 45%, #3a7bd5);
-  box-shadow: 0 0 18px rgba(127, 233, 255, 0.8);
+  box-shadow: 0 0 16px rgba(127, 233, 255, 0.8);
 }
+
+/* tapdrag mode: soft target ring under the flying finger */
+.mt-fly-ring {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 64px;
+  height: 64px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: 3px solid rgba(160, 235, 255, 0.7);
+  box-shadow: 0 0 14px rgba(127, 233, 255, 0.5), inset 0 0 10px rgba(127, 233, 255, 0.35);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.mt-fly-ring::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  border-radius: 50%;
+  background: rgba(200, 245, 255, 0.85);
+}
+.mt-fly-ring--on { opacity: 1; transition: none; }
 
 .mt-fire {
   position: absolute;
   right: max(24px, env(safe-area-inset-right));
   bottom: max(28px, env(safe-area-inset-bottom));
-  width: 118px;
-  height: 118px;
+  width: var(--mt-fire);
+  height: var(--mt-fire);
   border-radius: 50%;
   border: 4px solid rgba(255, 255, 255, 0.85);
   background: radial-gradient(circle at 40% 35%, #ff9dd9, #ff3bd4 50%, #9a1a86);
   color: #fff;
   font-family: var(--mt-font);
-  font-size: 26px;
+  font-size: calc(var(--mt-fire) * 0.22);
   font-weight: 900;
   letter-spacing: 0.06em;
   text-shadow: 0 2px 0 rgba(0, 0, 0, 0.6);

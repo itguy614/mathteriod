@@ -88,6 +88,9 @@ export class LevelController {
     stickX: 0,
     stickY: 0,
     stickActive: false,
+    flyActive: false,
+    flyX: 0,
+    flyY: 0,
   };
   private aimGuide: AimGuide;
   /** Ship stays invulnerable while rocks fly in, and for ENTRY.graceAfter after. */
@@ -128,7 +131,7 @@ export class LevelController {
     hud.setMessage(null);
     hud.show(true);
     if (options.showControlsHint) {
-      this.hintKind = ctx.input.isTouch ? 'touch' : options.controlMode;
+      this.hintKind = ctx.input.isTouch ? (options.touchMode === 'joystick' ? 'touch' : 'tapdrag') : options.controlMode;
       this.hintT = HINT.maxSec;
       hud.showHint(this.hintKind);
     }
@@ -341,10 +344,10 @@ export class LevelController {
     return this.question;
   }
 
-  /** Tap/click on the field (world coords): lock onto the nearest numbered rock under it. */
-  tapAt(wx: number, wy: number): void {
-    if (this.state !== 'playing' || !this.ship.alive) return;
-    const pad = TAP_TARGET.pickPadPx / this.ctx.gfx.pxPerUnit;
+  /** The live, targetable numbered rock under a world point (with `padPx` screen padding), if any. */
+  rockAt(wx: number, wy: number, padPx: number = TAP_TARGET.pickPadPx): Asteroid | null {
+    if (this.state !== 'playing') return null;
+    const pad = padPx / this.ctx.gfx.pxPerUnit;
     let best: Asteroid | null = null;
     let bestD = Infinity;
     for (const a of this.ctx.field.list) {
@@ -359,6 +362,13 @@ export class LevelController {
         }
       }
     }
+    return best;
+  }
+
+  /** Tap/click on the field (world coords): lock onto the nearest numbered rock under it. */
+  tapAt(wx: number, wy: number, padPx: number = TAP_TARGET.pickPadPx): void {
+    if (this.state !== 'playing' || !this.ship.alive) return;
+    const best = this.rockAt(wx, wy, padPx);
     if (best) {
       this.tapTarget = best;
       this.tapT = TAP_TARGET.timeout;
@@ -732,14 +742,16 @@ export class LevelController {
     }
     const c = this.controls;
     const keys = !c.stickActive && (c.thrust > 0 || c.brake > 0 || c.turn !== 0);
-    if (kind === 'touch' && keys) {
+    if ((kind === 'touch' || kind === 'tapdrag') && keys) {
       // a touch-capable device that's actually being played with a keyboard
       const hadFire = !this.ctx.hud.hintHas('fire');
       this.hintKind = this.options.controlMode;
       this.ctx.hud.showHint(this.hintKind);
       if (hadFire) this.ctx.hud.hintUsed('fire');
     }
-    if (c.stickActive) this.hintUsed('stick');
+    const touchUsed = this.ctx.input.consumeUsed();
+    if (c.stickActive || touchUsed.stick) this.hintUsed('stick');
+    if (c.flyActive || touchUsed.fly) this.hintUsed('drag');
     if (this.hintKind === 'rotate') {
       if (c.thrust > 0 || c.stickActive) this.hintUsed('fly');
       if (c.turn !== 0 || c.stickActive) this.hintUsed('turn');

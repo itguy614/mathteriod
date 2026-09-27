@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { AudioBus, GameCallbacks, GameEngine, LevelConfig, LevelOptions, ShipLoadout } from '../types';
 import { AsteroidField } from './asteroids';
 import { Background } from './background';
-import { ASTEROID, ATTRACT_ASTEROIDS, type AsteroidSize } from './constants';
+import { ASTEROID, ATTRACT_ASTEROIDS, TAP_TARGET, TOUCH, type AsteroidSize } from './constants';
 import { Effects } from './effects';
 import { Graphics } from './graphics';
 import { HangarView } from './hangar';
@@ -62,11 +62,16 @@ export class Engine implements GameEngine {
       () => this.userPause(),
       () => this.userResume(),
     );
-    const input = new Input(
-      container,
-      () => this.userPause(),
-      (cx, cy) => this.onTap(cx, cy),
-    );
+    const input = new Input(container, {
+      onPauseKey: () => this.userPause(),
+      onTap: (cx, cy) => this.onTap(cx, cy),
+      pickRock: (cx, cy, padPx) => {
+        if (this.mode !== 'level' || this.paused || !this.level) return false;
+        const w = this.clientToWorld(cx, cy);
+        return !!w && !!this.level.rockAt(w.x, w.y, padPx);
+      },
+      toWorld: (cx, cy) => this.clientToWorld(cx, cy) ?? { x: 0, y: 0 },
+    });
     this.ctx = { gfx: this.gfx, particles, labels, effects, field, lasers, hud, input, audio };
 
     if (typeof ResizeObserver !== 'undefined') {
@@ -105,8 +110,10 @@ export class Engine implements GameEngine {
     this.ctx.input.setEnabled(true);
     const opts: LevelOptions = {
       controlMode: options?.controlMode === 'direct' ? 'direct' : 'rotate',
+      touchMode: options?.touchMode === 'joystick' ? 'joystick' : 'tapdrag',
       showControlsHint: !!options?.showControlsHint,
     };
+    this.ctx.input.setTouchMode(opts.touchMode);
     this.level = new LevelController(this.ctx, config, loadout, callbacks, opts);
   }
 
@@ -258,13 +265,20 @@ export class Engine implements GameEngine {
     };
   }
 
+  private clientToWorld(clientX: number, clientY: number): { x: number; y: number } | null {
+    const r = this.gfx.canvas.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) return null;
+    return {
+      x: ((clientX - r.left) / r.width) * 2 * this.gfx.halfW - this.gfx.halfW,
+      y: this.gfx.halfH - ((clientY - r.top) / r.height) * 2 * this.gfx.halfH,
+    };
+  }
+
   private onTap(clientX: number, clientY: number): void {
     if (this.mode !== 'level' || this.paused || !this.level) return;
-    const r = this.gfx.canvas.getBoundingClientRect();
-    if (r.width === 0 || r.height === 0) return;
-    const wx = ((clientX - r.left) / r.width) * 2 * this.gfx.halfW - this.gfx.halfW;
-    const wy = this.gfx.halfH - ((clientY - r.top) / r.height) * 2 * this.gfx.halfH;
-    this.level.tapAt(wx, wy);
+    const w = this.clientToWorld(clientX, clientY);
+    // touch taps get the same generous padding that classified them as rock taps
+    if (w) this.level.tapAt(w.x, w.y, this.ctx.input.isTouch ? TOUCH.rockPadPx : TAP_TARGET.pickPadPx);
   }
 
   private userResume(): void {
