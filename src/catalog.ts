@@ -3,6 +3,7 @@ import type { ItemKind, ShipLoadout } from './types';
 /**
  * Hangar catalog. ui/ uses it for the shop; game/ renders every id listed here.
  * Prices are in Stardust. price 0 = owned by everyone from the start.
+ * Starter bodies: the one picked at profile creation is free; the others cost their price.
  */
 export interface CatalogItem {
   id: string;
@@ -18,9 +19,9 @@ export interface CatalogItem {
 
 export const CATALOG: CatalogItem[] = [
   // Bodies
-  { id: 'arrow', kind: 'body', name: 'Arrow', description: 'Classic sleek triangle fighter.', price: 0, starter: true },
-  { id: 'saucer', kind: 'body', name: 'Saucer', description: 'Round flying disc with a glowing dome.', price: 0, starter: true },
-  { id: 'stingray', kind: 'body', name: 'Stingray', description: 'Wide swept wings, low and fast-looking.', price: 0, starter: true },
+  { id: 'arrow', kind: 'body', name: 'Arrow', description: 'Classic sleek triangle fighter.', price: 200, starter: true },
+  { id: 'saucer', kind: 'body', name: 'Saucer', description: 'Round flying disc with a glowing dome.', price: 200, starter: true },
+  { id: 'stingray', kind: 'body', name: 'Stingray', description: 'Wide swept wings, low and fast-looking.', price: 200, starter: true },
   { id: 'falcon', kind: 'body', name: 'Falcon', description: 'Twin-prong freighter with side pods.', price: 400 },
   { id: 'titan', kind: 'body', name: 'Titan', description: 'Heavy armored cruiser with twin engines.', price: 800 },
   { id: 'phoenix', kind: 'body', name: 'Phoenix', description: 'Feathered wings that flare when thrusting.', price: 1500 },

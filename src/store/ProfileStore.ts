@@ -38,7 +38,7 @@ export function buildNewProfile(name: string, avatar: string, starterBody: strin
     createdAt: Date.now(),
     learning: initialLearningState(),
     stardust: 0,
-    owned: freeItemIds(),
+    owned: [...freeItemIds(), starterBody],
     loadout: defaultLoadout(starterBody),
     bestScore: 0,
     settings: defaultSettings(),

@@ -294,9 +294,10 @@ async function finishLevel(engine: LearningEngine, result: LevelResult): Promise
 // ---------------------------------------------------------------------------
 
 // The game pauses itself on P/Esc and reports it via onPause; while the pause
-// menu is up, the same keys resume.
+// menu is up, the same keys resume. The game preventDefault()s the key press
+// that paused it, so skip that one or we'd resume on the same event.
 window.addEventListener('keydown', (e) => {
-  if (!playing || !paused) return;
+  if (!playing || !paused || e.defaultPrevented || e.repeat) return;
   if (e.key === 'p' || e.key === 'P' || e.key === 'Escape') {
     e.preventDefault();
     resumeGame();

@@ -36,7 +36,8 @@ export function migrate(raw: unknown): StoredData {
 
 /** Fill in fields that may be missing from older / hand-edited saves. */
 function repairProfile(p: Profile): Profile {
-  const owned = new Set([...(Array.isArray(p.owned) ? p.owned : []), ...freeItemIds()]);
+  // The equipped body is always owned (covers the chosen starter ship).
+  const owned = new Set([...(Array.isArray(p.owned) ? p.owned : []), ...freeItemIds(), ...(p.loadout?.body ? [p.loadout.body] : [])]);
   const known = new Set(CATALOG.map((i) => i.id));
   return {
     ...p,

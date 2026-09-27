@@ -108,8 +108,8 @@ export function resultsScreen(opts: {
     name: 'results',
     el,
     onEnter() {
-      opts.audio.play(cleared ? 'levelClear' : 'levelFail');
-      if (summary.promoted) timers.push(setTimeout(() => opts.audio.play('promote'), 900));
+      // The game already played levelClear/levelFail at the moment it happened.
+      if (summary.promoted) timers.push(setTimeout(() => opts.audio.play('promote'), 400));
       // Stars pop in one by one.
       el.querySelectorAll<HTMLElement>('.star').forEach((s, i) => {
         timers.push(setTimeout(() => s.classList.add('show'), 400 + i * 280));

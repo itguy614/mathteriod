@@ -21,7 +21,10 @@ describe('LocalProfileStore', () => {
     expect(p.name).toBe('Zoe');
     expect(p.stardust).toBe(0);
     expect(p.loadout.body).toBe('saucer');
-    expect(p.owned).toEqual(expect.arrayContaining(['arrow', 'saucer', 'stingray', 'cyan', 'pulse', 'ion']));
+    expect(p.owned).toEqual(expect.arrayContaining(['saucer', 'cyan', 'pulse', 'ion']));
+    // Only the chosen starter ship is free; the others are bought in the hangar.
+    expect(p.owned).not.toContain('arrow');
+    expect(p.owned).not.toContain('stingray');
     expect(p.owned).not.toContain('gold');
     expect(p.settings).toEqual({ musicVolume: 0.5, sfxVolume: 0.8, readAloud: false });
 
