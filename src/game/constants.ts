@@ -4,7 +4,8 @@
  * World scale: the play field is a 2D plane (XY), viewed top-down by an
  * orthographic camera. The long screen axis is WORLD_SPAN units (so a
  * landscape screen is 100 units wide, a portrait one 100 units tall).
- * A sensible LevelConfig.asteroidSpeed range is ~3 (gentle) to ~12 (fast).
+ * A sensible LevelConfig.asteroidSpeed range is ~2 (gentle) to ~5 (brisk);
+ * anything faster is clamped to ASTEROID.maxSpeed.
  */
 export const WORLD_SPAN = 100;
 
@@ -13,37 +14,93 @@ export const SHIP = {
   thrust: 44, // units/s^2
   drag: 0.55, // exponential damping per second (gentle)
   maxSpeed: 44,
-  radius: 1.9, // collision radius (forgiving)
+  radius: 1.5, // collision radius (forgiving: smaller than the drawn hull)
   visualScale: 1.3, // procedural models are ~5 units long; drawn 30% larger
-  invulnSec: 2.5,
+  invulnSec: 3.2, // after a respawn
   respawnDelay: 1.3,
-  spawnGrace: 1.0,
   agileMult: 1.15,
   stickDeadzone: 0.15,
+  /** 'rotate' mode Down/S: exponential damping per second while held (stops in ~0.5s). */
+  brakeDrag: 6,
+} as const;
+
+/** 'direct' control mode: arrows/WASD push the ship in that screen direction. */
+export const DIRECT = {
+  accel: 44, // units/s^2 (same as SHIP.thrust)
+  maxSpeed: 44,
+  drag: 0.55, // while a direction is held
+  releaseDrag: 3.2, // when no direction is held: stops fairly quickly
+  turnRate: 10, // rad/s, ship turns to face its movement direction
 } as const;
 
 export const LASER = {
   speed: 80,
-  life: 0.8,
+  life: 1.6, // long enough to cross the screen diagonal; lasers vanish at the screen edge
   cooldown: 0.15, // minimum time between tapped shots
   holdRepeat: 0.28, // auto-fire interval while the button is held
   max: 5,
   radius: 0.55,
+  /** Lasers are removed once they are this far outside the visible field. */
+  cullMargin: 1.5,
+} as const;
+
+/** Faint dotted line from the nose showing where shots go. */
+export const AIM_GUIDE = {
+  length: 40, // world units (the screen is 100 wide)
+  spacing: 2.4,
+  startGap: 1.2, // gap between the muzzle and the first dot
+  dotPx: 7, // dot diameter in CSS pixels
+  opacity: 0.6, // nearest dots; fades toward the far end
+  flow: 3.5, // units/s the dots creep forward (reads as direction, not as a shot)
 } as const;
 
 export type AsteroidSize = 1 | 2 | 3;
 
 export const ASTEROID = {
   radius: { 1: 2.7, 2: 4.2, 3: 6.2 } as Record<AsteroidSize, number>,
-  speedMult: { 1: 1.55, 2: 1.25, 3: 1 } as Record<AsteroidSize, number>,
+  /** Split children barely speed up. */
+  speedMult: { 1: 1.2, 2: 1.1, 3: 1 } as Record<AsteroidSize, number>,
+  /** Hard cap on any asteroid's drift speed, whatever the config says. */
+  maxSpeed: 7,
+  /** Split children leave at ±this angle (rad) from the parent's heading, plus a small laser push. */
+  splitSpread: [0.3, 0.55] as const,
+  splitKick: 0.6,
+  /** A wrong hit on a small rock nudges it this much. */
+  wrongNudge: 1.2,
+  /** After ramming the ship the rock bounces off at this fraction of its base speed. */
+  bounceSpeed: 0.8,
   /** Number label height in world units, and a minimum on-screen pixel height. */
   labelHeight: { 1: 3.9, 2: 4.7, 3: 5.6 } as Record<AsteroidSize, number>,
   labelMinPx: { 1: 42, 2: 48, 3: 54 } as Record<AsteroidSize, number>,
-  hitScale: 0.88, // collision radius factor vs. visual radius
-  safeRadius: 24,
+  /** Laser hit radius factor vs. visual radius (generous: shooting should be easy). */
+  laserHitScale: 1.0,
+  /** Ship collision radius factor vs. visual radius (forgiving: grazes don't count). */
+  shipHitScale: 0.72,
+  /** Keep respawn points at least this far from rocks when possible. */
+  safeRadius: 16,
+  /** Keep labels this many CSS px inside the screen edges (top leaves room for the HUD). */
+  labelEdgePx: 6,
+  labelTopPx: 96,
 } as const;
 
-/** Gentle laser magnetism toward any numbered asteroid (never only the answer). */
+/** Level start: the field is empty, then the rocks fly in from off-screen. */
+export const ENTRY = {
+  firstDelay: 0.6, // after the first question appears
+  window: 1.6, // spawn times are staggered across this many seconds
+  duration: 1.2, // seconds for a rock to get fully on screen
+  decay: 2.6, // entry speed eases down to cruise speed at this rate
+  maxAngle: (32 * Math.PI) / 180, // max deviation from the edge normal
+  clearance: 12, // entry path must pass at least this far (plus radii) from the ship
+  /** Ship stays invulnerable this long after the last rock has fully entered. */
+  graceAfter: 1.5,
+  /** Safety: a rock that somehow never gets fully inside stops "entering" after this. */
+  timeout: 6,
+} as const;
+
+/**
+ * Gentle laser magnetism toward any numbered asteroid (never only the answer).
+ * Lasers don't wrap, so only direct on-screen positions count.
+ */
 export const AIM_ASSIST = {
   cone: (20 * Math.PI) / 180,
   range: 45,
@@ -67,6 +124,12 @@ export const LEVEL = {
   speedBonusZeroMs: 6000,
   /** Correct answers faster than this get a small "Speedy!" popup. */
   speedyMs: 3000,
+} as const;
+
+/** On-screen controls hint (LevelOptions.showControlsHint). */
+export const HINT = {
+  /** Everything fades after this many seconds even if a control was never used. */
+  maxSec: 12,
 } as const;
 
 export const ATTRACT_ASTEROIDS = 5;

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { AudioBus, GameCallbacks, GameEngine, LevelConfig, ShipLoadout } from '../types';
+import type { AudioBus, GameCallbacks, GameEngine, LevelConfig, LevelOptions, ShipLoadout } from '../types';
 import { AsteroidField } from './asteroids';
 import { Background } from './background';
 import { ASTEROID, ATTRACT_ASTEROIDS, type AsteroidSize } from './constants';
@@ -96,14 +96,18 @@ export class Engine implements GameEngine {
   // -------------------------------------------------------------------------
   // GameEngine API
 
-  startLevel(config: LevelConfig, loadout: ShipLoadout, callbacks: GameCallbacks): void {
+  startLevel(config: LevelConfig, loadout: ShipLoadout, callbacks: GameCallbacks, options: LevelOptions): void {
     if (this.disposed) return;
     this.teardownMode();
     this.mode = 'level';
     this.callbacks = callbacks;
     this.ctx.particles.setDepthTest(false);
     this.ctx.input.setEnabled(true);
-    this.level = new LevelController(this.ctx, config, loadout, callbacks);
+    const opts: LevelOptions = {
+      controlMode: options?.controlMode === 'direct' ? 'direct' : 'rotate',
+      showControlsHint: !!options?.showControlsHint,
+    };
+    this.level = new LevelController(this.ctx, config, loadout, callbacks, opts);
   }
 
   /** Freeze the simulation (idempotent). Rendering continues. */
@@ -211,11 +215,45 @@ export class Engine implements GameEngine {
   debug() {
     return {
       answer: this.level?.currentQuestion?.answer ?? null,
-      rocks: this.ctx.field.list.filter((a) => a.value !== null).map((a) => ({ value: a.value, x: a.pos.x, y: a.pos.y })),
+      rocks: this.ctx.field.list
+        .filter((a) => a.value !== null)
+        .map((a) => ({
+          value: a.value,
+          x: a.pos.x,
+          y: a.pos.y,
+          vx: a.vel.x,
+          vy: a.vel.y,
+          r: a.radius,
+          entering: a.entering,
+          label: a.label ? { x: a.label.position.x, y: a.label.position.y, w: a.label.scale.x, h: a.label.scale.y, visible: a.label.visible } : null,
+        })),
+      simTime: this.time,
+      view: { halfW: this.gfx.halfW, halfH: this.gfx.halfH, pxPerUnit: this.gfx.pxPerUnit },
+      ship: this.level
+        ? { x: this.level.ship.pos.x, y: this.level.ship.pos.y, angle: this.level.ship.angle, invuln: this.level.ship.invuln, alive: this.level.ship.alive }
+        : null,
+      lasers: this.ctx.lasers.list.map((l) => ({ x: l.pos.x, y: l.pos.y, age: l.age })),
       tapValue: (value: number) => {
-        const a = this.ctx.field.list.find((r) => r.value === value);
+        const a = this.ctx.field.list.find((r) => r.value === value && r.active);
         if (a && this.level) this.level.tapAt(a.pos.x, a.pos.y);
         return !!a;
+      },
+      /** Move the first rock carrying `value` (for screenshots of edge cases). */
+      placeRock: (value: number, x: number, y: number, vx = 0, vy = 0) => {
+        const a = this.ctx.field.list.find((r) => r.value === value);
+        if (!a) return false;
+        a.entering = false;
+        a.pos.set(x, y);
+        a.vel.set(vx, vy);
+        return true;
+      },
+      /** Put the ship somewhere and point it (angle 0 = up). */
+      placeShip: (x: number, y: number, angle = 0) => {
+        if (!this.level) return false;
+        this.level.ship.pos.set(x, y);
+        this.level.ship.vel.set(0, 0);
+        this.level.ship.angle = angle;
+        return true;
       },
     };
   }
@@ -273,7 +311,7 @@ export class Engine implements GameEngine {
     const { gfx, field } = this.ctx;
     const size = (1 + ((Math.random() * 3) | 0)) as AsteroidSize;
     const edge = Math.random() * 4;
-    const m = ASTEROID.radius[size] * 0.9;
+    const m = ASTEROID.radius[size] + 0.5;
     let x: number;
     let y: number;
     if (edge < 1) [x, y] = [-gfx.halfW - m, (Math.random() * 2 - 1) * gfx.halfH];
@@ -283,7 +321,8 @@ export class Engine implements GameEngine {
     // drift roughly across the field
     const a = Math.atan2(-y, -x) + (Math.random() - 0.5) * 1.2;
     const sp = 2 + Math.random() * 2.5;
-    field.spawn(size, null, x, y, Math.cos(a) * sp, Math.sin(a) * sp, true);
+    // drifts in at its cruise speed (no fly-in boost), then wraps like any rock
+    field.spawnEntering(size, null, x, y, a, sp, 999, 0);
   }
 
   private loop = (now: number): void => {

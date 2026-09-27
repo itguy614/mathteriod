@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { DynamicColor } from './colors';
 import { LASER } from './constants';
-import { wrapCoord, type Graphics } from './graphics';
+import type { Graphics } from './graphics';
 
 /**
  * Laser bolts. Styles are purely cosmetic: every style shares the same
@@ -122,7 +122,16 @@ export class Lasers {
     attr.needsUpdate = true;
   }
 
-  update(dt: number, time: number, wrap: boolean): void {
+  /** Current laser color (animated for rainbow); valid after update(). */
+  get currentColor(): THREE.Color {
+    return this.color.color;
+  }
+
+  /**
+   * Advance bolts. With `cull`, a bolt is removed as soon as it leaves the visible
+   * field: lasers never wrap around the screen.
+   */
+  update(dt: number, time: number, cull: boolean): void {
     const c = this.color.update(time);
     this.glowMat.color.copy(c).multiplyScalar(2.2);
     this.lineMat.color.copy(c).lerp(new THREE.Color(1, 1, 1), 0.3).multiplyScalar(3);
@@ -136,13 +145,9 @@ export class Lasers {
       l.prev.copy(l.pos);
       l.pos.x += l.vel.x * dt;
       l.pos.y += l.vel.y * dt;
-      if (wrap) {
-        const wx = wrapCoord(l.pos.x, this.gfx.halfW, 1);
-        const wy = wrapCoord(l.pos.y, this.gfx.halfH, 1);
-        if (wx !== l.pos.x || wy !== l.pos.y) {
-          l.pos.set(wx, wy);
-          l.prev.copy(l.pos);
-        }
+      if (cull && (Math.abs(l.pos.x) > this.gfx.halfW + LASER.cullMargin || Math.abs(l.pos.y) > this.gfx.halfH + LASER.cullMargin)) {
+        this.removeAt(i);
+        continue;
       }
       l.obj.position.set(l.pos.x, l.pos.y, 1);
       l.obj.rotation.z = Math.atan2(-l.vel.x, l.vel.y); // follows aim-assist curving

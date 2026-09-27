@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { ASTEROID, type AsteroidSize } from './constants';
+import { ASTEROID, ENTRY, type AsteroidSize } from './constants';
 import { wrapCoord, type Graphics } from './graphics';
 import { makeLabelSprite, type LabelFactory } from './labels';
 
@@ -45,6 +45,13 @@ function rockGeometry(seed: number): { geo: THREE.BufferGeometry; edges: THREE.E
   return { geo, edges };
 }
 
+/** Offsets of the wrapped copies currently drawn (at most 3: horizontal, vertical, corner). */
+interface Ghost {
+  mesh: THREE.Mesh;
+  ox: number;
+  oy: number;
+}
+
 export class Asteroid {
   readonly group = new THREE.Group();
   readonly pos = new THREE.Vector2();
@@ -58,9 +65,21 @@ export class Asteroid {
   shakeT = 0;
   flashT = 0;
   fadeIn = 0;
+  /**
+   * Flying in from off-screen: no wrapping, can't be shot, can't hit the ship.
+   * Ends once the whole rock is inside the visible field.
+   */
+  entering = false;
+  /** Seconds before an entering rock starts moving (it waits off-screen, hidden). */
+  entryDelay = 0;
+  private entryAge = 0;
+  private entryDir = new THREE.Vector2();
+  private entrySpeed0 = 0;
+  private cruise = 0;
   private spinAxis: THREE.Vector3;
   private spinRate: number;
   private mesh: THREE.Mesh;
+  private ghosts: Ghost[] = [];
   readonly rimMat: THREE.LineBasicMaterial;
   private tmpQ = new THREE.Quaternion();
 
@@ -86,14 +105,79 @@ export class Asteroid {
     this.spinRate = (0.25 + Math.random() * 0.6) * (4 / (this.radius + 1)) * (Math.random() < 0.5 ? -1 : 1);
   }
 
+  /** Radius for laser hits (generous). */
   get hitRadius(): number {
-    return this.radius * ASTEROID.hitScale;
+    return this.radius * ASTEROID.laserHitScale;
+  }
+
+  /** Radius for ship collisions (forgiving). */
+  get bodyRadius(): number {
+    return this.radius * ASTEROID.shipHitScale;
+  }
+
+  /** Can lasers, taps and the ship interact with this rock yet? */
+  get active(): boolean {
+    return this.alive && !this.entering;
+  }
+
+  /**
+   * Fly in along `dirAngle` from the current (off-screen) position, arriving fully
+   * on screen after about `duration` seconds and then drifting on at `cruise`.
+   * `distance` is how far it must travel to be fully inside.
+   */
+  startEntry(dirAngle: number, cruise: number, distance: number, duration: number, delay: number): void {
+    this.entering = true;
+    this.entryDelay = Math.max(0, delay);
+    this.entryAge = 0;
+    this.entryDir.set(Math.cos(dirAngle), Math.sin(dirAngle));
+    this.cruise = cruise;
+    // distance(T) = c·T + (v0 − c)(1 − e^(−kT))/k  →  solve for v0
+    const k = ENTRY.decay;
+    const T = Math.max(0.1, duration);
+    const extra = Math.max(0, distance - cruise * T);
+    this.entrySpeed0 = cruise + (extra * k) / (1 - Math.exp(-k * T));
+    this.vel.set(this.entryDir.x * this.entrySpeed0, this.entryDir.y * this.entrySpeed0);
+    this.fadeIn = 1;
+  }
+
+  /** Is any part of the rock inside the visible field? */
+  isOnScreen(halfW: number, halfH: number): boolean {
+    return Math.abs(this.pos.x) - this.radius < halfW && Math.abs(this.pos.y) - this.radius < halfH;
+  }
+
+  /** Is the whole rock inside the visible field? */
+  isFullyInside(halfW: number, halfH: number, pad = 0): boolean {
+    return Math.abs(this.pos.x) + this.radius + pad <= halfW && Math.abs(this.pos.y) + this.radius + pad <= halfH;
+  }
+
+  /**
+   * Every place this rock is drawn: its own position plus the wrapped copies
+   * shown while it straddles a screen edge (so shots and collisions match what
+   * the player sees).
+   */
+  images(out: THREE.Vector2[]): number {
+    out[0] ??= new THREE.Vector2();
+    out[0].copy(this.pos);
+    let n = 1;
+    for (const g of this.ghosts) {
+      if (!g.mesh.visible) continue;
+      out[n] ??= new THREE.Vector2();
+      out[n].set(this.pos.x + g.ox, this.pos.y + g.oy);
+      n++;
+    }
+    return n;
   }
 
   update(dt: number, halfW: number, halfH: number): void {
-    const m = this.radius;
-    this.pos.x = wrapCoord(this.pos.x + this.vel.x * dt, halfW, m);
-    this.pos.y = wrapCoord(this.pos.y + this.vel.y * dt, halfH, m);
+    if (this.entering) {
+      this.updateEntry(dt, halfW, halfH);
+    } else {
+      const sp = this.vel.length();
+      if (sp > ASTEROID.maxSpeed) this.vel.multiplyScalar(ASTEROID.maxSpeed / sp);
+      // wrap when the center crosses the edge; the wrapped copy (ghost) shows the rest
+      this.pos.x = wrapCoord(this.pos.x + this.vel.x * dt, halfW, 0);
+      this.pos.y = wrapCoord(this.pos.y + this.vel.y * dt, halfH, 0);
+    }
     this.tmpQ.setFromAxisAngle(this.spinAxis, this.spinRate * dt);
     this.mesh.quaternion.premultiply(this.tmpQ);
     if (this.shakeT > 0) this.shakeT = Math.max(0, this.shakeT - dt);
@@ -108,14 +192,83 @@ export class Asteroid {
       oy = Math.cos(this.shakeT * 55) * 0.25 * k;
     }
     this.group.position.set(this.pos.x + ox, this.pos.y + oy, 0);
-    this.group.scale.setScalar(0.3 + 0.7 * easeOut(this.fadeIn));
+    this.mesh.scale.setScalar(this.radius * (0.3 + 0.7 * easeOut(this.fadeIn)));
+    this.group.visible = !(this.entering && this.entryDelay > 0);
     const f = this.flashT > 0 ? this.flashT / 0.35 : 0;
     this.rimMat.color.copy(RIM_BASE).lerp(new THREE.Color(1, 1, 1), f).multiplyScalar(RIM_GLOW + f * 2.5);
     this.rimMat.opacity = this.fadeIn;
-    if (this.label) {
-      this.label.position.set(this.group.position.x, this.group.position.y, 5);
-      (this.label.material as THREE.SpriteMaterial).opacity = this.fadeIn;
+    this.updateGhosts(halfW, halfH);
+  }
+
+  private updateEntry(dt: number, halfW: number, halfH: number): void {
+    if (this.entryDelay > 0) {
+      this.entryDelay -= dt;
+      if (this.entryDelay > 0) return;
+      dt = -this.entryDelay;
+      this.entryDelay = 0;
     }
+    this.entryAge += dt;
+    const sp = this.cruise + (this.entrySpeed0 - this.cruise) * Math.exp(-ENTRY.decay * this.entryAge);
+    this.vel.set(this.entryDir.x * sp, this.entryDir.y * sp);
+    this.pos.x += this.vel.x * dt;
+    this.pos.y += this.vel.y * dt;
+    if (this.isFullyInside(halfW, halfH) || this.entryAge > ENTRY.timeout) {
+      this.entering = false;
+      this.vel.set(this.entryDir.x * this.cruise, this.entryDir.y * this.cruise);
+      this.pos.x = wrapCoord(this.pos.x, halfW, 0);
+      this.pos.y = wrapCoord(this.pos.y, halfH, 0);
+    }
+  }
+
+  private updateGhosts(halfW: number, halfH: number): void {
+    let gx = 0;
+    let gy = 0;
+    if (!this.entering) {
+      if (this.pos.x > halfW - this.radius) gx = -2 * halfW;
+      else if (this.pos.x < -halfW + this.radius) gx = 2 * halfW;
+      if (this.pos.y > halfH - this.radius) gy = -2 * halfH;
+      else if (this.pos.y < -halfH + this.radius) gy = 2 * halfH;
+    }
+    const want: Array<[number, number]> = [];
+    if (gx) want.push([gx, 0]);
+    if (gy) want.push([0, gy]);
+    if (gx && gy) want.push([gx, gy]);
+    while (this.ghosts.length < want.length) {
+      const mesh = this.mesh.clone(); // shares geometry + materials
+      this.group.add(mesh);
+      this.ghosts.push({ mesh, ox: 0, oy: 0 });
+    }
+    for (let i = 0; i < this.ghosts.length; i++) {
+      const g = this.ghosts[i];
+      const w = want[i];
+      g.mesh.visible = !!w;
+      if (!w) continue;
+      g.ox = w[0];
+      g.oy = w[1];
+      g.mesh.position.set(w[0], w[1], 0);
+      g.mesh.quaternion.copy(this.mesh.quaternion);
+      g.mesh.scale.copy(this.mesh.scale);
+    }
+  }
+
+  /**
+   * Keep the number fully on screen: it follows the rock, clamped inside the
+   * visible field (insets in world units). Hidden only while the rock itself is
+   * completely off screen (waiting to fly in).
+   */
+  placeLabel(halfW: number, halfH: number, edge: number, top: number): void {
+    const lbl = this.label;
+    if (!lbl) return;
+    const mat = lbl.material as THREE.SpriteMaterial;
+    const visible = this.group.visible && this.isOnScreen(halfW, halfH);
+    lbl.visible = visible;
+    if (!visible) return;
+    const hw = lbl.scale.x / 2;
+    const hh = lbl.scale.y / 2;
+    const x = clampRange(this.group.position.x, -halfW + edge + hw, halfW - edge - hw);
+    const y = clampRange(this.group.position.y, -halfH + edge + hh, halfH - top - hh);
+    lbl.position.set(x, y, 5);
+    mat.opacity = this.fadeIn;
   }
 
   dispose(): void {
@@ -127,6 +280,11 @@ export class Asteroid {
       this.label = null;
     }
   }
+}
+
+function clampRange(v: number, lo: number, hi: number): number {
+  if (lo > hi) return (lo + hi) / 2;
+  return v < lo ? lo : v > hi ? hi : v;
 }
 
 function easeOut(t: number): number {
@@ -166,7 +324,43 @@ export class AsteroidField {
     this.gfx.scene.add(a.group);
     this.list.push(a);
     a.update(0, this.gfx.halfW, this.gfx.halfH);
+    this.placeLabel(a);
     return a;
+  }
+
+  /**
+   * Spawn a rock just outside the screen at (x, y) that flies in along `dirAngle`
+   * after `delay` seconds and then drifts at `cruise` speed.
+   */
+  spawnEntering(
+    size: AsteroidSize,
+    value: number | null,
+    x: number,
+    y: number,
+    dirAngle: number,
+    cruise: number,
+    duration: number,
+    delay: number,
+  ): Asteroid {
+    const a = this.spawn(size, value, x, y, 0, 0);
+    a.pos.set(x, y); // spawn() wrapped it on screen; it starts outside
+    const { halfW, halfH } = this.gfx;
+    // distance along the heading until the whole rock is inside (plus a little)
+    const dx = Math.cos(dirAngle);
+    const dy = Math.sin(dirAngle);
+    let need = 0;
+    const r = a.radius + 0.3;
+    if (Math.abs(x) + r > halfW && Math.abs(dx) > 1e-3) need = Math.max(need, (Math.abs(x) + r - halfW) / Math.abs(dx));
+    if (Math.abs(y) + r > halfH && Math.abs(dy) > 1e-3) need = Math.max(need, (Math.abs(y) + r - halfH) / Math.abs(dy));
+    a.startEntry(dirAngle, cruise, need, duration, delay);
+    a.update(0, halfW, halfH);
+    this.placeLabel(a);
+    return a;
+  }
+
+  private placeLabel(a: Asteroid): void {
+    const px = this.gfx.pxPerUnit || 1;
+    a.placeLabel(this.gfx.halfW, this.gfx.halfH, ASTEROID.labelEdgePx / px, ASTEROID.labelTopPx / px);
   }
 
   setValue(a: Asteroid, value: number | null): void {
@@ -190,6 +384,7 @@ export class AsteroidField {
     }
     a.labelAspect = aspect;
     this.sizeLabel(a);
+    this.placeLabel(a);
   }
 
   private sizeLabel(a: Asteroid): void {
@@ -199,7 +394,10 @@ export class AsteroidField {
   }
 
   private refreshLabelSizes(): void {
-    for (const a of this.list) this.sizeLabel(a);
+    for (const a of this.list) {
+      this.sizeLabel(a);
+      this.placeLabel(a);
+    }
   }
 
   remove(a: Asteroid): void {
@@ -216,7 +414,15 @@ export class AsteroidField {
   }
 
   update(dt: number): void {
-    for (const a of this.list) a.update(dt, this.gfx.halfW, this.gfx.halfH);
+    for (const a of this.list) {
+      a.update(dt, this.gfx.halfW, this.gfx.halfH);
+      this.placeLabel(a);
+    }
+  }
+
+  /** Any rock still flying in (or waiting to)? */
+  get entering(): boolean {
+    return this.list.some((a) => a.entering);
   }
 
   clear(): void {

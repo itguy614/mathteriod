@@ -3,9 +3,10 @@ import type { Controls } from './ship';
 const KEY_LEFT = new Set(['ArrowLeft', 'KeyA']);
 const KEY_RIGHT = new Set(['ArrowRight', 'KeyD']);
 const KEY_UP = new Set(['ArrowUp', 'KeyW']);
+const KEY_DOWN = new Set(['ArrowDown', 'KeyS']);
 const KEY_FIRE = new Set(['Space']);
 const KEY_PAUSE = new Set(['KeyP', 'Escape']);
-const GAME_KEYS = new Set([...KEY_LEFT, ...KEY_RIGHT, ...KEY_UP, ...KEY_FIRE, 'ArrowDown', 'KeyS']);
+const GAME_KEYS = new Set([...KEY_LEFT, ...KEY_RIGHT, ...KEY_UP, ...KEY_DOWN, ...KEY_FIRE]);
 
 function isEditable(t: EventTarget | null): boolean {
   const el = t as HTMLElement | null;
@@ -243,8 +244,16 @@ export class Input {
       for (const k of set) if (this.keys.has(k)) return true;
       return false;
     };
-    out.turn = (has(KEY_LEFT) ? 1 : 0) - (has(KEY_RIGHT) ? 1 : 0);
-    out.thrust = has(KEY_UP) ? 1 : 0;
+    const left = has(KEY_LEFT);
+    const right = has(KEY_RIGHT);
+    const up = has(KEY_UP);
+    const down = has(KEY_DOWN);
+    // 'rotate' mode reads turn/thrust/brake; 'direct' mode reads moveX/moveY
+    out.turn = (left ? 1 : 0) - (right ? 1 : 0);
+    out.thrust = up ? 1 : 0;
+    out.brake = down ? 1 : 0;
+    out.moveX = (right ? 1 : 0) - (left ? 1 : 0);
+    out.moveY = (up ? 1 : 0) - (down ? 1 : 0);
     out.fire = has(KEY_FIRE) || this.fireTouch;
     out.stickActive = this.stick.active;
     out.stickX = this.stick.x;

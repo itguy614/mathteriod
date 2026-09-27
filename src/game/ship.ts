@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import type { ShipLoadout } from '../types';
+import type { ControlMode, ShipLoadout } from '../types';
 import { DynamicColor } from './colors';
-import { SHIP } from './constants';
+import { DIRECT, SHIP } from './constants';
 import { wrapCoord } from './graphics';
 import type { Particles } from './particles';
 import { buildShipModel, type ShipModel } from './shipModels';
@@ -12,6 +12,11 @@ export interface Controls {
   turn: number;
   /** 0..1 */
   thrust: number;
+  /** 0..1, 'rotate' mode Down/S. */
+  brake: number;
+  /** 'direct' mode keyboard direction, screen-space (+y up), each -1..1. */
+  moveX: number;
+  moveY: number;
   fire: boolean;
   /** Touch joystick, screen-space with +y up, magnitude 0..1. */
   stickX: number;
@@ -119,8 +124,53 @@ export class Ship {
     this.alive = true;
   }
 
-  /** Flight model: rotation, thrust with inertia, gentle drag, screen wrap. */
-  fly(dt: number, c: Controls, halfW: number, halfH: number): void {
+  /**
+   * Flight model with screen wrap.
+   * 'rotate': turn, thrust with inertia, gentle drag, Down brakes hard.
+   * 'direct': keys push the ship in that screen direction; it turns to face its motion.
+   * The touch joystick (turn toward the stick + thrust) works the same in both modes.
+   */
+  fly(dt: number, c: Controls, halfW: number, halfH: number, mode: ControlMode = 'rotate'): void {
+    if (mode === 'direct' && !c.stickActive) this.flyDirect(dt, c);
+    else this.flyRotate(dt, c);
+    this.pos.x = wrapCoord(this.pos.x + this.vel.x * dt, halfW, 2);
+    this.pos.y = wrapCoord(this.pos.y + this.vel.y * dt, halfH, 2);
+  }
+
+  private flyDirect(dt: number, c: Controls): void {
+    const mult = this.agile ? SHIP.agileMult : 1;
+    let mx = c.moveX;
+    let my = c.moveY;
+    const mag = Math.hypot(mx, my);
+    let turn = 0;
+    if (mag > 0.01) {
+      mx /= mag;
+      my /= mag;
+      const a = DIRECT.accel * mult * Math.min(1, mag) * dt;
+      this.vel.x += mx * a;
+      this.vel.y += my * a;
+      this.vel.multiplyScalar(Math.exp(-DIRECT.drag * dt));
+      // turn quickly to face the direction of travel (never overshoot)
+      const d = angleDiff(this.angle, Math.atan2(-mx, my));
+      const step = DIRECT.turnRate * mult * dt;
+      this.angle += THREE.MathUtils.clamp(d, -step, step);
+      turn = THREE.MathUtils.clamp(d * 2, -1, 1);
+      this.thrustAmt = Math.min(1, mag);
+    } else {
+      this.vel.multiplyScalar(Math.exp(-DIRECT.releaseDrag * dt));
+      this.thrustAmt = 0;
+      // tap-to-target may still rotate the ship in place
+      if (c.turn !== 0) {
+        this.angle += c.turn * SHIP.turnRate * mult * dt;
+        turn = THREE.MathUtils.clamp(c.turn, -1, 1);
+      }
+    }
+    this.turnAmt = turn;
+    const sp = this.vel.length();
+    if (sp > DIRECT.maxSpeed) this.vel.multiplyScalar(DIRECT.maxSpeed / sp);
+  }
+
+  private flyRotate(dt: number, c: Controls): void {
     const mult = this.agile ? SHIP.agileMult : 1;
     let turn = c.turn;
     let thrust = c.thrust;
@@ -143,11 +193,9 @@ export class Ship {
       this.vel.x += this.forwardX() * a;
       this.vel.y += this.forwardY() * a;
     }
-    this.vel.multiplyScalar(Math.exp(-SHIP.drag * dt));
+    this.vel.multiplyScalar(Math.exp(-(SHIP.drag + (c.stickActive ? 0 : c.brake * SHIP.brakeDrag)) * dt));
     const sp = this.vel.length();
     if (sp > SHIP.maxSpeed) this.vel.multiplyScalar(SHIP.maxSpeed / sp);
-    this.pos.x = wrapCoord(this.pos.x + this.vel.x * dt, halfW, 2);
-    this.pos.y = wrapCoord(this.pos.y + this.vel.y * dt, halfH, 2);
   }
 
   popShield(): void {

@@ -3,7 +3,9 @@ import { disposeObject } from './graphics';
 
 /**
  * Procedural ship bodies. Conventions: nose points +Y, "up" (toward the
- * camera) is +Z, about 5 units long. Each model has a lit metallic hull plus
+ * camera) is +Z, about 5 units long. Every body has a glowing nose light at
+ * its cannon, and `muzzle` sits just in front of it so bolts visibly leave
+ * the gun. Each model has a lit metallic hull plus
  * neon accents (MeshBasic/LineBasic, pushed above 1.0 so they bloom) that are
  * recolored every frame from the loadout color.
  */
@@ -26,6 +28,8 @@ interface Mats {
   accent: THREE.MeshBasicMaterial;
   line: THREE.LineBasicMaterial;
   engine: THREE.MeshBasicMaterial;
+  /** Bright forward "nose light" at the cannon: marks the front at game scale. */
+  nose: THREE.MeshBasicMaterial;
 }
 
 function makeMats(): Mats {
@@ -36,6 +40,7 @@ function makeMats(): Mats {
     accent: new THREE.MeshBasicMaterial({ color: 0xffffff }),
     line: new THREE.LineBasicMaterial({ color: 0xffffff }),
     engine: new THREE.MeshBasicMaterial({ color: 0xffffff }),
+    nose: new THREE.MeshBasicMaterial({ color: 0xffffff }),
   };
 }
 
@@ -92,7 +97,27 @@ class BaseModel implements ShipModel {
     this.tmp.copy(color).lerp(new THREE.Color(1, 1, 1), 0.35);
     m.engine.color.copy(this.tmp).multiplyScalar(0.9 + thrust * 2.4 + Math.sin(time * 40) * 0.15 * thrust);
     m.glass.emissive.copy(color).multiplyScalar(0.28);
+    this.tmp.copy(color).lerp(new THREE.Color(1, 1, 1), 0.55);
+    m.nose.color.copy(this.tmp).multiplyScalar(2.8 + 0.5 * Math.sin(time * 5));
     this.animate?.(time, thrust, color);
+  }
+
+  /** Glowing nose light (a bright bead that blooms) at (0, y, z). */
+  addNoseLight(y: number, z: number, r = 0.3): void {
+    this.root.add(mesh(new THREE.SphereGeometry(r, 12, 10), this.mats.nose, 0, y, z));
+  }
+
+  /** A forward-pointing neon chevron on the hull top: another "this way is front" cue. */
+  addChevron(y: number, z: number, w = 0.9, h = 0.55, t = 0.16): void {
+    const pts = [
+      new THREE.Vector2(0, h),
+      new THREE.Vector2(w / 2, 0),
+      new THREE.Vector2(w / 2 - t, 0),
+      new THREE.Vector2(0, h - t * 1.4),
+      new THREE.Vector2(-w / 2 + t, 0),
+      new THREE.Vector2(-w / 2, 0),
+    ];
+    this.root.add(mesh(new THREE.ShapeGeometry(new THREE.Shape(pts)), this.mats.accent, 0, y, z));
   }
 
   dispose(): void {
@@ -138,8 +163,9 @@ function buildArrow(): BaseModel {
   }
   // engine nozzle
   s.root.add(mesh(new THREE.BoxGeometry(0.7, 0.25, 0.35), m.engine, 0, -1.45, 0.1));
+  s.addNoseLight(2.5, 0.22, 0.26);
   s.engines = [new THREE.Vector3(0, -1.65, 0)];
-  s.muzzle.set(0, 2.8, 0);
+  s.muzzle.set(0, 2.9, 0);
   return s;
 }
 
@@ -158,7 +184,10 @@ function buildSaucer(): BaseModel {
   ].map(([x, y]) => new THREE.Vector2(x, y));
   const disc = new THREE.LatheGeometry(profile, 40);
   disc.rotateX(Math.PI / 2);
-  s.root.add(mesh(disc, m.hull));
+  // The broad, flat-topped disc mirrors the environment's ceiling light and blooms
+  // into a white blob that hides the turret; a satin finish keeps it readable.
+  const discMat = new THREE.MeshStandardMaterial({ color: 0x8c96aa, metalness: 0.55, roughness: 0.58 });
+  s.root.add(mesh(disc, discMat));
   // dark inner ring panel
   const panel = new THREE.TorusGeometry(1.55, 0.14, 6, 40);
   s.root.add(mesh(panel, m.dark, 0, 0, 0.3));
@@ -168,7 +197,9 @@ function buildSaucer(): BaseModel {
   const domeMat = new THREE.MeshStandardMaterial({
     color: 0x0a1030,
     metalness: 0.1,
-    roughness: 0.05,
+    // not mirror-smooth: a sharp highlight here blooms into a blob that hides the turret
+    roughness: 0.38,
+    envMapIntensity: 0.5,
     emissive: 0xffffff,
     emissiveIntensity: 0.9,
     transparent: true,
@@ -185,30 +216,45 @@ function buildSaucer(): BaseModel {
     const a = (i / 10) * Math.PI * 2;
     s.root.add(mesh(bulb, i % 2 ? bankA : bankB, Math.cos(a) * 1.85, Math.sin(a) * 1.85, 0.27));
   }
-  // nose cannon so the heading reads clearly
-  const nose = new THREE.ConeGeometry(0.28, 1.0, 10);
-  s.root.add(mesh(nose, m.hull, 0, 2.55, 0));
-  s.root.add(mesh(new THREE.BoxGeometry(0.16, 0.7, 0.1), m.accent, 0, 2.1, 0.3));
+  // Front turret + cannon: the saucer is round, so the gun has to carry the heading.
+  // Turret housing on the front of the disc
+  const housing = new THREE.CylinderGeometry(0.55, 0.62, 0.42, 16);
+  housing.rotateX(Math.PI / 2);
+  s.root.add(mesh(housing, m.dark, 0, 1.75, 0.42));
+  s.root.add(mesh(new THREE.TorusGeometry(0.58, 0.06, 6, 20), m.accent, 0, 1.75, 0.64));
+  // barrel, reaching well past the rim
+  const barrel = new THREE.CylinderGeometry(0.2, 0.24, 1.9, 12);
+  s.root.add(mesh(barrel, m.hull, 0, 2.7, 0.42));
+  s.root.add(mesh(new THREE.BoxGeometry(0.1, 1.5, 0.06), m.accent, 0, 2.65, 0.65));
+  // muzzle collar + nose light at the tip
+  const collar = new THREE.TorusGeometry(0.25, 0.08, 6, 16);
+  collar.rotateX(Math.PI / 2);
+  s.root.add(mesh(collar, m.accent, 0, 3.6, 0.42));
+  s.addNoseLight(3.72, 0.42, 0.3);
+  // forward chevrons on the disc between the dome and the turret
+  s.addChevron(0.95, 0.46, 1.0, 0.5);
   // rear engines
   for (const x of [-0.8, 0.8]) s.root.add(mesh(new THREE.SphereGeometry(0.28, 10, 8), m.engine, x, -2.15, 0));
   const tmp = new THREE.Color();
   s.animate = (time, thrust, color) => {
-    domeMat.emissive.copy(color).multiplyScalar(0.6 + 0.25 * Math.sin(time * 3) + thrust * 0.3);
+    // kept below the bloom blow-out so the turret and hull stay readable at game scale
+    domeMat.emissive.copy(color).multiplyScalar(0.32 + 0.1 * Math.sin(time * 3) + thrust * 0.12);
     const blink = Math.sin(time * 6) > 0;
     tmp.copy(color).lerp(new THREE.Color(1, 1, 1), 0.5);
-    bankA.color.copy(tmp).multiplyScalar(blink ? 2.4 : 0.35);
-    bankB.color.copy(tmp).multiplyScalar(blink ? 0.35 : 2.4);
+    bankA.color.copy(tmp).multiplyScalar(blink ? 1.5 : 0.3);
+    bankB.color.copy(tmp).multiplyScalar(blink ? 0.3 : 1.5);
   };
   const baseDispose = s.dispose.bind(s);
   s.dispose = () => {
     baseDispose();
     domeMat.dispose();
+    discMat.dispose();
     bankA.dispose();
     bankB.dispose();
     bulb.dispose();
   };
   s.engines = [new THREE.Vector3(-0.8, -2.3, 0), new THREE.Vector3(0.8, -2.3, 0)];
-  s.muzzle.set(0, 3.0, 0);
+  s.muzzle.set(0, 3.95, 0.42);
   return s;
 }
 
@@ -246,8 +292,12 @@ function buildStingray(): BaseModel {
     s.root.add(mesh(new THREE.SphereGeometry(0.12, 8, 6), m.accent, side * 3.0, -1.02, 0.1));
   }
   for (const x of [-0.45, 0.45]) s.root.add(mesh(new THREE.BoxGeometry(0.4, 0.22, 0.25), m.engine, x, -1.35, 0.05));
+  // short nose gun + light at the tip of the snout
+  s.root.add(mesh(new THREE.CylinderGeometry(0.1, 0.14, 0.9, 8), m.hull, 0, 2.3, 0.12));
+  s.addNoseLight(2.72, 0.12, 0.26);
+  s.addChevron(1.55, 0.44, 0.7, 0.4, 0.13);
   s.engines = [new THREE.Vector3(-0.45, -1.55, 0), new THREE.Vector3(0.45, -1.55, 0)];
-  s.muzzle.set(0, 2.4, 0);
+  s.muzzle.set(0, 3.0, 0.12);
   return s;
 }
 
@@ -283,8 +333,12 @@ function buildFalcon(): BaseModel {
   const arcMesh = mesh(arc, m.engine, 0, 0, 0.05);
   arcMesh.rotation.z = -Math.PI / 2 - Math.PI * 0.35;
   s.root.add(arcMesh);
+  // center cannon between the prongs
+  s.root.add(mesh(new THREE.CylinderGeometry(0.15, 0.2, 1.4, 10), m.hull, 0, 2.2, 0.05));
+  s.addNoseLight(2.95, 0.05, 0.28);
+  s.addChevron(0.9, 0.52, 0.9, 0.5);
   s.engines = [-0.9, 0, 0.9].map((x) => new THREE.Vector3(x, -1.75 + Math.abs(x) * 0.3, 0));
-  s.muzzle.set(0, 2.7, 0);
+  s.muzzle.set(0, 3.2, 0.05);
   return s;
 }
 
@@ -324,8 +378,10 @@ function buildTitan(): BaseModel {
     s.root.add(mesh(glow, m.engine, x, -3.11, 0));
     s.root.add(mesh(new THREE.SphereGeometry(0.34, 10, 8), m.engine, x, -3.05, 0));
   }
+  s.root.add(mesh(new THREE.CylinderGeometry(0.13, 0.16, 0.8, 8), m.hull, 0, 3.0, 0.2));
+  s.addNoseLight(3.4, 0.2, 0.28);
   s.engines = [new THREE.Vector3(-0.8, -3.2, 0), new THREE.Vector3(0.8, -3.2, 0)];
-  s.muzzle.set(0, 3.0, 0);
+  s.muzzle.set(0, 3.65, 0.2);
   return s;
 }
 
@@ -401,8 +457,9 @@ function buildPhoenix(): BaseModel {
     }
     for (let i = 0; i < tails.length; i++) tails[i].scale.set(1, 1 + flare * (0.6 + 0.2 * Math.sin(time * 30 + i)), 1);
   };
+  s.addNoseLight(2.85, 0.2, 0.26);
   s.engines = [new THREE.Vector3(0, -2.3, 0)];
-  s.muzzle.set(0, 3.0, 0);
+  s.muzzle.set(0, 3.2, 0.2);
   return s;
 }
 

@@ -3,7 +3,7 @@
  * Stub question provider (addition facts), console audio, loadout switcher.
  */
 import { CATALOG } from '../catalog';
-import type { AudioBus, LevelConfig, Question, QuestionProvider, ShipLoadout } from '../types';
+import type { AudioBus, ControlMode, LevelConfig, LevelOptions, Question, QuestionProvider, ShipLoadout } from '../types';
 import { createGame } from './index';
 
 const logEl = () => document.getElementById('dev-log');
@@ -79,8 +79,10 @@ panel.innerHTML = `
   <h3>Level</h3>
   <label>Level # <input id="d-level" type="number" value="1" min="1"></label>
   <label>Asteroids <input id="d-count" type="number" value="4" min="1" max="12"></label>
-  <label>Speed <input id="d-speed" type="number" value="5" min="1" max="20" step="0.5"></label>
-  <label>Max asteroids <input id="d-max" type="number" value="14" min="1" max="40"></label>
+  <label>Speed <input id="d-speed" type="number" value="3" min="1" max="20" step="0.5"></label>
+  <label>Max asteroids <input id="d-max" type="number" value="8" min="1" max="40"></label>
+  <label>Controls <select id="d-mode"><option value="rotate">Rotate (classic)</option><option value="direct">Direct (8-way)</option></select></label>
+  <label>Controls hint <input id="d-hint" type="checkbox" checked></label>
   <div class="row">
     <button id="d-start">Start level</button>
     <button id="d-hangar">Hangar</button>
@@ -111,6 +113,13 @@ function loadout(): ShipLoadout {
 
 const num = (id: string) => Number($<HTMLInputElement>(id).value);
 
+function levelOptions(): LevelOptions {
+  return {
+    controlMode: $<HTMLSelectElement>('d-mode').value as ControlMode,
+    showControlsHint: $<HTMLInputElement>('d-hint').checked,
+  };
+}
+
 const game = createGame($('game-root'), audio);
 let mode: 'idle' | 'level' | 'hangar' = 'idle';
 (window as unknown as { game: typeof game }).game = game;
@@ -138,7 +147,7 @@ function start(): void {
       mode = 'idle';
       log(`LEVEL END ${r.outcome} score=${r.score} hits=${r.hitsTaken} answers=${r.answers.length} ${r.durationMs}ms`);
     },
-  });
+  }, levelOptions());
   // let keyboard focus go to the game, not the button
   (document.activeElement as HTMLElement | null)?.blur();
 }
@@ -182,5 +191,15 @@ if (hb !== null) {
   const b = params.get('body');
   if (b) $<HTMLSelectElement>('d-body').value = b;
   if (params.get('shield')) (document.querySelector('.d-perk[value=shield]') as HTMLInputElement).checked = true;
+  // ?mode=direct  ?hint=0  ?count=5  ?speed=4  ?laser=twin
+  const m = params.get('mode');
+  if (m === 'direct' || m === 'rotate') $<HTMLSelectElement>('d-mode').value = m;
+  if (params.get('hint') === '0') $<HTMLInputElement>('d-hint').checked = false;
+  for (const k of ['count', 'speed'] as const) {
+    const v = params.get(k);
+    if (v) $<HTMLInputElement>(`d-${k}`).value = v;
+  }
+  const lz = params.get('laser');
+  if (lz) $<HTMLSelectElement>('d-laser').value = lz;
   start();
 }

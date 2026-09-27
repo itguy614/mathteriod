@@ -1,12 +1,22 @@
 import * as THREE from 'three';
-import type { AnswerEvent, AudioBus, GameCallbacks, LevelConfig, LevelResult, Question, ShipLoadout } from '../types';
+import type {
+  AnswerEvent,
+  AudioBus,
+  GameCallbacks,
+  LevelConfig,
+  LevelOptions,
+  LevelResult,
+  Question,
+  ShipLoadout,
+} from '../types';
 import { HITS_ALLOWED } from '../catalog';
 import type { Asteroid, AsteroidField } from './asteroids';
 import { circlesOverlap, segmentHitsCircle } from './collision';
-import { AIM_ASSIST, ASTEROID, LASER, LEVEL, SHIP, TAP_TARGET, type AsteroidSize } from './constants';
+import { AimGuide } from './aimGuide';
+import { AIM_ASSIST, ASTEROID, ENTRY, HINT, LASER, LEVEL, SHIP, TAP_TARGET, type AsteroidSize } from './constants';
 import type { Effects } from './effects';
 import type { Graphics } from './graphics';
-import type { Hud, ShieldState } from './hud';
+import type { HintKind, HintPart, Hud, ShieldState } from './hud';
 import type { Input } from './input';
 import { makeLabelSprite, type LabelFactory } from './labels';
 import type { Laser, Lasers } from './lasers';
@@ -30,6 +40,8 @@ const EQ_LABEL_MIN_PX = 36;
 const EQ_LABEL_OFFSET = 6.2;
 
 const ORIGIN = new THREE.Vector2();
+/** Scratch list for Asteroid.images(). */
+const IMAGES: THREE.Vector2[] = [];
 
 function wrapAngle(a: number): number {
   while (a > Math.PI) a -= Math.PI * 2;
@@ -63,8 +75,25 @@ export class LevelController {
   private fireCd = 0;
   private eqLabel: THREE.Sprite;
   private eqAspect = 3;
+  private eqBelow = true;
+  private eqSide = -1;
   private eqTex: THREE.Texture | null = null;
-  private controls: Controls = { turn: 0, thrust: 0, fire: false, stickX: 0, stickY: 0, stickActive: false };
+  private controls: Controls = {
+    turn: 0,
+    thrust: 0,
+    brake: 0,
+    moveX: 0,
+    moveY: 0,
+    fire: false,
+    stickX: 0,
+    stickY: 0,
+    stickActive: false,
+  };
+  private aimGuide: AimGuide;
+  /** Ship stays invulnerable while rocks fly in, and for ENTRY.graceAfter after. */
+  private entryGrace: number = ENTRY.graceAfter;
+  private hintKind: HintKind | null = null;
+  private hintT = 0;
   private tmpV = new THREE.Vector3();
   private disposed = false;
   private tapTarget: Asteroid | null = null;
@@ -75,6 +104,7 @@ export class LevelController {
     private config: LevelConfig,
     loadout: ShipLoadout,
     private callbacks: GameCallbacks,
+    private options: LevelOptions,
   ) {
     const { gfx, field, lasers, hud } = ctx;
     field.clear();
@@ -83,7 +113,6 @@ export class LevelController {
 
     this.ship = new Ship(loadout);
     this.ship.reset(0, 0);
-    this.ship.invuln = SHIP.spawnGrace;
     this.ship.shieldUp = loadout.perks.includes('shield');
     this.shieldState = this.ship.shieldUp ? 'up' : 'none';
     gfx.scene.add(this.ship.group);
@@ -91,22 +120,34 @@ export class LevelController {
     this.eqLabel = makeLabelSprite(null);
     this.eqLabel.visible = false;
     gfx.overlay.add(this.eqLabel);
+    this.aimGuide = new AimGuide(gfx);
 
     hud.setLevel(config.levelNumber, config.stageName);
     hud.setHull(0, HITS_ALLOWED, this.shieldState);
     hud.setScore(0);
     hud.setMessage(null);
     hud.show(true);
+    if (options.showControlsHint) {
+      this.hintKind = ctx.input.isTouch ? 'touch' : options.controlMode;
+      this.hintT = HINT.maxSec;
+      hud.showHint(this.hintKind);
+    }
 
+    // The field starts empty: rocks wait off-screen and fly in after the first question.
     this.spawnInitial();
     if (field.liveValues().length === 0) this.endLevel('cleared');
     else this.nextQuestion();
   }
 
   private baseSpeed(size: AsteroidSize): number {
-    return this.config.asteroidSpeed * ASTEROID.speedMult[size];
+    return Math.min(ASTEROID.maxSpeed, Math.max(0, this.config.asteroidSpeed) * ASTEROID.speedMult[size]);
   }
 
+  /**
+   * Level start: every rock waits just outside a screen edge and flies in,
+   * staggered over ENTRY.window seconds. Entry points favor the edges away from
+   * the ship, and each path must cross the field without passing near the ship.
+   */
   private spawnInitial(): void {
     const { gfx, field } = this.ctx;
     const n = Math.max(0, Math.floor(this.config.initialAsteroids));
@@ -116,24 +157,55 @@ export class LevelController {
     } catch (err) {
       console.error('[game] initialValues failed', err);
     }
-    const safe = Math.min(ASTEROID.safeRadius, Math.min(gfx.halfW, gfx.halfH) * 0.8);
+    const { halfW, halfH } = gfx;
+    const sx = this.ship.pos.x;
+    const sy = this.ship.pos.y;
+    const r = ASTEROID.radius[3];
+    const pathLen = 2 * Math.max(halfW, halfH);
+    const need = r + SHIP.radius + ENTRY.clearance;
+    // edges: inward normal, and how far the ship is from each (favor the far side)
+    const edges = [
+      { nx: 1, ny: 0, len: halfH, w: (sx + halfW) / (2 * halfW) }, // left edge, heading right
+      { nx: -1, ny: 0, len: halfH, w: (halfW - sx) / (2 * halfW) }, // right
+      { nx: 0, ny: 1, len: halfW, w: (sy + halfH) / (2 * halfH) }, // bottom
+      { nx: 0, ny: -1, len: halfW, w: (halfH - sy) / (2 * halfH) }, // top
+    ].map((e) => ({ ...e, weight: e.len * (0.3 + e.w) }));
+    const totalW = edges.reduce((t, e) => t + e.weight, 0);
+    const starts: THREE.Vector2[] = [];
+
     for (let i = 0; i < values.length; i++) {
-      let x = 0;
-      let y = 0;
-      for (let tries = 0; tries < 40; tries++) {
-        x = randRange(-gfx.halfW, gfx.halfW);
-        y = randRange(-gfx.halfH, gfx.halfH);
-        if (Math.hypot(x, y) >= safe) break;
-        if (tries === 39) {
-          // fall back to the screen edge
-          const a = Math.random() * Math.PI * 2;
-          x = Math.cos(a) * gfx.halfW;
-          y = Math.sin(a) * gfx.halfH;
+      let best: { x: number; y: number; ang: number; score: number } | null = null;
+      for (let tries = 0; tries < 48; tries++) {
+        let pick = Math.random() * totalW;
+        let e = edges[0];
+        for (const cand of edges) {
+          e = cand;
+          pick -= cand.weight;
+          if (pick <= 0) break;
         }
+        // keep entry points out of the top corners, under the hull and score widgets
+        const u = (e.nx !== 0 ? randRange(-0.78, 0.5) : e.ny < 0 ? randRange(-0.62, 0.62) : randRange(-0.78, 0.78)) * e.len;
+        const out = r + 0.6;
+        // point just outside the edge (e.nx/ny point inward)
+        const x = e.nx !== 0 ? -e.nx * (halfW + out) : u;
+        const y = e.ny !== 0 ? -e.ny * (halfH + out) : u;
+        const ang = Math.atan2(e.ny, e.nx) + randRange(-ENTRY.maxAngle, ENTRY.maxAngle);
+        // closest approach of the path to the ship
+        const dx = Math.cos(ang);
+        const dy = Math.sin(ang);
+        const t = THREE.MathUtils.clamp((sx - x) * dx + (sy - y) * dy, 0, pathLen);
+        const miss = Math.hypot(x + dx * t - sx, y + dy * t - sy);
+        let spread = Infinity;
+        for (const p of starts) spread = Math.min(spread, Math.hypot(p.x - x, p.y - y));
+        const score = Math.min(miss - need, (spread - 2 * r - 2) * 0.5);
+        if (!best || score > best.score) best = { x, y, ang, score };
+        if (score >= 0) break;
       }
-      const a = Math.random() * Math.PI * 2;
-      const sp = this.baseSpeed(3) * randRange(0.75, 1.25);
-      field.spawn(3, values[i], x, y, Math.cos(a) * sp, Math.sin(a) * sp, true);
+      if (!best) continue;
+      starts.push(new THREE.Vector2(best.x, best.y));
+      const cruise = this.baseSpeed(3) * randRange(0.8, 1.15);
+      const delay = ENTRY.firstDelay + (values.length > 1 ? i / (values.length - 1) : 0) * ENTRY.window + randRange(0, 0.15);
+      field.spawnEntering(3, values[i], best.x, best.y, best.ang, cruise, ENTRY.duration, delay);
     }
   }
 
@@ -207,9 +279,10 @@ export class LevelController {
 
     // ship
     input.read(this.controls);
+    this.trackHint(dt);
     if (this.ship.alive) {
       const aligned = this.applyTapTarget(dt);
-      this.ship.fly(dt, this.controls, gfx.halfW, gfx.halfH);
+      this.ship.fly(dt, this.controls, gfx.halfW, gfx.halfH, this.options.controlMode);
       this.fireCd -= dt;
       if (this.fireCd <= 0 && lasers.count < LASER.max) {
         if (input.consumeFirePress()) this.fire(LASER.cooldown);
@@ -223,18 +296,20 @@ export class LevelController {
       this.respawnT -= dt;
       if (this.respawnT <= 0) this.respawn();
     }
+    field.update(dt);
+    this.updateInvulnerability(dt);
     this.ship.updateVisual(dt, time, particles);
 
-    field.update(dt);
     this.steerLasers(dt);
     lasers.update(dt, time, true);
+    this.updateAimGuide(dt);
 
     if (this.state === 'playing') {
       this.checkLaserHits();
       if (this.state === 'playing') this.checkShipCollisions();
     }
 
-    this.updateEquationLabel();
+    this.updateEquationLabel(dt);
 
     if (this.state === 'ending') {
       if (this.outcome === 'cleared') {
@@ -273,11 +348,15 @@ export class LevelController {
     let best: Asteroid | null = null;
     let bestD = Infinity;
     for (const a of this.ctx.field.list) {
-      if (a.value === null) continue;
-      const d = Math.hypot(a.pos.x - wx, a.pos.y - wy);
-      if (d <= a.radius + pad && d < bestD) {
-        best = a;
-        bestD = d;
+      if (a.value === null || !a.active) continue;
+      // the wrapped copy at the far edge counts too: it's what the player sees
+      const n = a.images(IMAGES);
+      for (let i = 0; i < n; i++) {
+        const d = Math.hypot(IMAGES[i].x - wx, IMAGES[i].y - wy);
+        if (d <= a.radius + pad && d < bestD) {
+          best = a;
+          bestD = d;
+        }
       }
     }
     if (best) {
@@ -289,11 +368,9 @@ export class LevelController {
   /** Heading the ship needs to hit `a` (with a little lead). */
   private aimAngle(a: Asteroid): number {
     const s = this.ship;
-    // Aim along the shortest path on the wrapping field (lasers wrap with a 1-unit
-    // margin), so rocks across the screen edge are within laser range.
-    const { halfW, halfH } = this.ctx.gfx;
-    const dx0 = shortestWrap(a.pos.x - s.pos.x, 2 * (halfW + 1));
-    const dy0 = shortestWrap(a.pos.y - s.pos.y, 2 * (halfH + 1));
+    // Lasers don't wrap, so aim straight at the rock (its center is always on screen).
+    const dx0 = a.pos.x - s.pos.x;
+    const dy0 = a.pos.y - s.pos.y;
     const t = Math.hypot(dx0, dy0) / LASER.speed;
     return Math.atan2(-(dx0 + a.vel.x * t), dy0 + a.vel.y * t);
   }
@@ -308,7 +385,8 @@ export class LevelController {
     if (!tgt) return false;
     this.tapT -= dt;
     const c = this.controls;
-    if (!tgt.alive || tgt.value === null || this.tapT <= 0 || c.turn !== 0 || c.stickActive) {
+    const manual = this.options.controlMode === 'direct' ? c.moveX !== 0 || c.moveY !== 0 : c.turn !== 0;
+    if (!tgt.alive || tgt.value === null || this.tapT <= 0 || manual || c.stickActive) {
       this.tapTarget = null;
       return false;
     }
@@ -329,7 +407,7 @@ export class LevelController {
       let bestDiff = 0;
       let bestD = Infinity;
       for (const a of field.list) {
-        if (a.value === null) continue;
+        if (a.value === null || !a.active) continue;
         const dx = a.pos.x - l.pos.x;
         const dy = a.pos.y - l.pos.y;
         const d = Math.hypot(dx, dy);
@@ -351,9 +429,15 @@ export class LevelController {
     lasers.fire(m.x, m.y, this.ship.angle, this.ship.vel.x * 0.5, this.ship.vel.y * 0.5);
     this.fireCd = cooldown;
     audio.play('laser');
+    this.hintUsed('fire');
   }
 
-  private updateEquationLabel(): void {
+  /**
+   * The equation rides above the ship, or below it while the ship faces up so it
+   * never covers the cannon and aim guide (with hysteresis, and a quick glide
+   * between the two spots).
+   */
+  private updateEquationLabel(dt: number): void {
     const s = this.ship;
     const show = this.state === 'playing' && s.alive && this.question !== null;
     this.eqLabel.visible = show;
@@ -363,8 +447,14 @@ export class LevelController {
     const w = h * this.eqAspect;
     this.eqLabel.scale.set(w, h, 1);
     const off = Math.max(EQ_LABEL_OFFSET, h * 0.5 + 3.2);
-    let y = s.pos.y + off;
-    if (y + h / 2 > gfx.halfH) y = s.pos.y - off;
+    const fy = s.forwardY();
+    if (!this.eqBelow && fy > 0.55) this.eqBelow = true;
+    else if (this.eqBelow && fy < 0.15) this.eqBelow = false;
+    let want = this.eqBelow ? -1 : 1;
+    if (want > 0 && s.pos.y + off + h / 2 > gfx.halfH) want = -1;
+    else if (want < 0 && s.pos.y - off - h / 2 < -gfx.halfH) want = 1;
+    this.eqSide += (want - this.eqSide) * Math.min(1, dt * 12);
+    const y = s.pos.y + off * this.eqSide;
     const x = THREE.MathUtils.clamp(s.pos.x, -gfx.halfW + w / 2, gfx.halfW - w / 2);
     this.eqLabel.position.set(x, y, 6);
   }
@@ -373,13 +463,20 @@ export class LevelController {
     const { lasers, field } = this.ctx;
     for (const l of lasers.list.slice()) {
       if (l.cosmetic) continue;
+      let hit: Asteroid | null = null;
       for (const a of field.list) {
-        if (a.value === null) continue;
-        if (segmentHitsCircle(l.prev.x, l.prev.y, l.pos.x, l.pos.y, a.pos.x, a.pos.y, a.hitRadius + LASER.radius)) {
-          lasers.remove(l);
-          this.onAsteroidHit(a, l);
-          break;
+        // rocks still flying in can't be shot yet: bolts pass through
+        if (a.value === null || !a.active) continue;
+        const n = a.images(IMAGES);
+        for (let i = 0; i < n && !hit; i++) {
+          const p = IMAGES[i];
+          if (segmentHitsCircle(l.prev.x, l.prev.y, l.pos.x, l.pos.y, p.x, p.y, a.hitRadius + LASER.radius)) hit = a;
         }
+        if (hit) break;
+      }
+      if (hit) {
+        lasers.remove(l);
+        this.onAsteroidHit(hit, l);
       }
       if (this.state !== 'playing') return;
     }
@@ -431,8 +528,9 @@ export class LevelController {
     } else {
       a.shakeT = 0.45;
       a.flashT = 0.35;
-      a.vel.x += dirX * 5;
-      a.vel.y += dirY * 5;
+      a.vel.x += dirX * ASTEROID.wrongNudge;
+      a.vel.y += dirY * ASTEROID.wrongNudge;
+      this.clampSpeed(a);
       effects.sparks(a.pos.x, a.pos.y, a.rimMat.color);
     }
   }
@@ -444,18 +542,21 @@ export class LevelController {
     const parentValue = a.value;
     const { x, y } = a.pos;
     const baseAngle = a.vel.lengthSq() > 0.01 ? Math.atan2(a.vel.y, a.vel.x) : Math.atan2(dirY, dirX);
-    const sp = Math.max(a.vel.length(), this.baseSpeed(size)) * 1.15;
+    // children barely speed up: their own base speed, never the parent's accumulated kicks
+    const sp = this.baseSpeed(size);
     field.remove(a);
     audio.play('split');
     effects.rockPuff(x, y, a.radius);
 
     const r = ASTEROID.radius[size];
     const mk = (value: number, side: number) => {
-      const ang = baseAngle + side * randRange(0.45, 0.8);
-      const s = sp * randRange(0.9, 1.15);
+      const ang = baseAngle + side * randRange(ASTEROID.splitSpread[0], ASTEROID.splitSpread[1]);
+      const s = sp * randRange(0.92, 1.05);
       const px = x + Math.cos(ang) * r * 0.7;
       const py = y + Math.sin(ang) * r * 0.7;
-      const child = field.spawn(size, value, px, py, Math.cos(ang) * s + dirX * 2, Math.sin(ang) * s + dirY * 2);
+      const k = ASTEROID.splitKick;
+      const child = field.spawn(size, value, px, py, Math.cos(ang) * s + dirX * k, Math.sin(ang) * s + dirY * k);
+      this.clampSpeed(child);
       child.shakeT = 0.45;
       child.flashT = 0.35;
       return child;
@@ -475,15 +576,34 @@ export class LevelController {
 
   private checkShipCollisions(): void {
     const s = this.ship;
-    if (!s.alive || s.invuln > 0) return;
-    const { field } = this.ctx;
-    for (const a of field.list) {
-      if (!circlesOverlap(s.pos.x, s.pos.y, SHIP.radius, a.pos.x, a.pos.y, a.hitRadius)) continue;
-      this.bounceAsteroid(a);
-      if (s.shieldUp) this.absorbWithShield(a);
-      else this.shipHit();
-      return;
+    if (!s.alive || s.invuln > 0 || this.entryGrace > 0) return;
+    const a = this.touchingRock(0);
+    if (!a) return;
+    this.bounceAsteroid(a);
+    if (s.shieldUp) this.absorbWithShield(a);
+    else this.shipHit();
+  }
+
+  /** First active rock whose body (or wrapped copy) overlaps the ship, grown by `pad`. */
+  private touchingRock(pad: number): Asteroid | null {
+    const s = this.ship;
+    for (const a of this.ctx.field.list) {
+      if (!a.active) continue;
+      const n = a.images(IMAGES);
+      for (let i = 0; i < n; i++) {
+        if (circlesOverlap(s.pos.x, s.pos.y, SHIP.radius + pad, IMAGES[i].x, IMAGES[i].y, a.bodyRadius)) {
+          // bounce relative to the copy that touched
+          if (i > 0) a.pos.copy(IMAGES[i]);
+          return a;
+        }
+      }
     }
+    return null;
+  }
+
+  private clampSpeed(a: Asteroid): void {
+    const sp = a.vel.length();
+    if (sp > ASTEROID.maxSpeed) a.vel.multiplyScalar(ASTEROID.maxSpeed / sp);
   }
 
   private bounceAsteroid(a: Asteroid): void {
@@ -499,9 +619,10 @@ export class LevelController {
     }
     nx /= len;
     ny /= len;
-    const sp = Math.max(a.vel.length(), this.baseSpeed(a.size)) * 1.1;
+    // gentle bounce: drift away slowly, never faster than it was going
+    const sp = Math.max(1, Math.min(a.vel.length(), this.baseSpeed(a.size)) * ASTEROID.bounceSpeed);
     a.vel.set(nx * sp, ny * sp);
-    const push = SHIP.radius + a.hitRadius + 0.6;
+    const push = SHIP.radius + a.bodyRadius + 0.6;
     a.pos.set(s.pos.x + nx * push, s.pos.y + ny * push);
     a.shakeT = 0.45;
     a.flashT = 0.3;
@@ -540,10 +661,97 @@ export class LevelController {
   }
 
   private respawn(): void {
-    this.ship.reset(0, 0);
+    const p = this.safeSpawnPoint();
+    this.ship.reset(p.x, p.y);
     this.ship.invuln = SHIP.invulnSec;
     this.ctx.input.consumeFirePress();
     this.fireCd = 0.2;
+  }
+
+  /** Respawn at the center unless a rock is close; then at the roomiest spot. */
+  private safeSpawnPoint(): { x: number; y: number } {
+    const { halfW, halfH } = this.ctx.gfx;
+    const cands: Array<[number, number]> = [[0, 0]];
+    for (const fx of [-0.5, 0, 0.5]) for (const fy of [-0.45, 0, 0.45]) if (fx || fy) cands.push([fx * halfW, fy * halfH]);
+    let best = cands[0];
+    let bestRoom = -Infinity;
+    for (const [x, y] of cands) {
+      let room = Infinity;
+      for (const a of this.ctx.field.list) {
+        const n = a.images(IMAGES);
+        for (let i = 0; i < n; i++) room = Math.min(room, Math.hypot(IMAGES[i].x - x, IMAGES[i].y - y) - a.radius);
+      }
+      if (x === 0 && y === 0 && room >= ASTEROID.safeRadius) return { x, y };
+      // slight preference for spots near the center
+      const score = Math.min(room, ASTEROID.safeRadius * 1.5) - Math.hypot(x, y) * 0.05;
+      if (score > bestRoom) {
+        bestRoom = score;
+        best = [x, y];
+      }
+    }
+    return { x: best[0], y: best[1] };
+  }
+
+  /**
+   * Keep the ship safe while rocks fly in (plus a moment after), and never let
+   * invulnerability run out while it's still inside a rock.
+   */
+  private updateInvulnerability(dt: number): void {
+    const s = this.ship;
+    if (this.ctx.field.entering) this.entryGrace = ENTRY.graceAfter;
+    else if (this.entryGrace > 0) this.entryGrace = Math.max(0, this.entryGrace - dt);
+    if (!s.alive || this.state !== 'playing') return;
+    // (entry grace is silent: no blinking while the ship waits for the rocks)
+    if (s.invuln > 0 && s.invuln < 0.25 && this.touchingRock(1.2)) s.invuln = 0.25;
+    else if (s.invuln <= 0 && this.entryGrace > 0 && this.entryGrace < 0.25 && this.touchingRock(1.2)) this.entryGrace = 0.25;
+  }
+
+  private updateAimGuide(dt: number): void {
+    const s = this.ship;
+    const show = this.state === 'playing' && s.alive;
+    if (!show) {
+      this.aimGuide.update(dt, 0, 0, 0, this.ctx.lasers.currentColor, false);
+      return;
+    }
+    const m = s.muzzleWorld(this.tmpV);
+    this.aimGuide.update(dt, m.x, m.y, s.angle, this.ctx.lasers.currentColor, true);
+  }
+
+  // -------------------------------------------------------------------------
+  // Controls hint
+
+  /** Fade hint chips as the player uses each control; everything goes after HINT.maxSec. */
+  private trackHint(dt: number): void {
+    const kind = this.hintKind;
+    if (!kind) return;
+    this.hintT -= dt;
+    if (this.hintT <= 0) {
+      this.ctx.hud.hideHint();
+      this.hintKind = null;
+      return;
+    }
+    const c = this.controls;
+    const keys = !c.stickActive && (c.thrust > 0 || c.brake > 0 || c.turn !== 0);
+    if (kind === 'touch' && keys) {
+      // a touch-capable device that's actually being played with a keyboard
+      const hadFire = !this.ctx.hud.hintHas('fire');
+      this.hintKind = this.options.controlMode;
+      this.ctx.hud.showHint(this.hintKind);
+      if (hadFire) this.ctx.hud.hintUsed('fire');
+    }
+    if (c.stickActive) this.hintUsed('stick');
+    if (this.hintKind === 'rotate') {
+      if (c.thrust > 0 || c.stickActive) this.hintUsed('fly');
+      if (c.turn !== 0 || c.stickActive) this.hintUsed('turn');
+      if (c.brake > 0) this.hintUsed('brake');
+    } else if (this.hintKind === 'direct') {
+      if (c.moveX !== 0 || c.moveY !== 0 || c.stickActive) this.hintUsed('move');
+    }
+  }
+
+  private hintUsed(p: HintPart): void {
+    if (!this.hintKind) return;
+    if (this.ctx.hud.hintUsed(p)) this.hintKind = null;
   }
 
   private endLevel(outcome: 'cleared' | 'failed'): void {
@@ -556,6 +764,8 @@ export class LevelController {
     this.question = null;
     this.setEquationLabel(null);
     hud.setQuestion(null);
+    hud.hideHint();
+    this.hintKind = null;
     if (outcome === 'cleared') {
       audio.play('levelClear');
       hud.setMessage('★ Level clear! ★', 'clear');
@@ -571,13 +781,11 @@ export class LevelController {
     if (this.disposed) return;
     this.disposed = true;
     this.ship.dispose();
+    this.aimGuide.dispose();
+    this.ctx.hud.hideHint();
     if (this.eqTex) this.eqTex.dispose();
     (this.eqLabel.material as THREE.SpriteMaterial).dispose();
     this.eqLabel.removeFromParent();
   }
 }
 
-/** Map a coordinate delta on a wrapping axis of length `period` into [-period/2, period/2]. */
-function shortestWrap(d: number, period: number): number {
-  return d - period * Math.round(d / period);
-}

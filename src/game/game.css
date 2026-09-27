@@ -212,6 +212,111 @@
 .mt-hud-paused-hint { margin-top: 10px; font-size: 16px; opacity: 0.8; }
 .mt-is-touch .mt-hud-paused-hint { display: none; }
 
+/* ------------------------------------------------------- controls hint */
+
+.mt-hint {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.8s ease;
+}
+.mt-hint--on { opacity: 1; }
+
+.mt-hint-bar {
+  position: absolute;
+  left: 50%;
+  bottom: max(18px, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: 999px;
+  background: rgba(8, 7, 30, 0.55);
+  border: 2px solid rgba(140, 200, 255, 0.35);
+  font-size: clamp(18px, 2.4vw, 28px);
+  font-weight: 900;
+  white-space: nowrap;
+  text-shadow: 0 2px 0 var(--mt-outline);
+  max-width: calc(100% - 24px);
+}
+.mt-hint-part {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+  margin: 0 0.55em;
+  max-width: 14em;
+  overflow: hidden;
+  transition: opacity 0.45s ease 0.35s, max-width 0.5s ease 0.8s, margin 0.5s ease 0.8s, transform 0.45s ease 0.35s;
+}
+.mt-hint-part--done {
+  opacity: 0;
+  transform: scale(0.85);
+}
+.mt-hint-bar .mt-hint-part--done { max-width: 0; margin: 0; }
+
+.mt-key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.55em;
+  height: 1.55em;
+  padding: 0 0.3em;
+  margin-right: 0.08em;
+  box-sizing: border-box;
+  border-radius: 0.3em;
+  font-family: var(--mt-font);
+  font-size: 0.85em;
+  font-weight: 900;
+  color: #07051a;
+  text-shadow: none;
+  background: linear-gradient(#ffffff, #cfe4ff);
+  border: 2px solid #7fb6ff;
+  box-shadow: 0 0.14em 0 #3f6fb8, 0 0 10px rgba(127, 200, 255, 0.45);
+  line-height: 1;
+}
+.mt-key-arrow { width: 0.95em; height: 0.95em; display: block; }
+.mt-key--wide { min-width: 3.6em; font-size: 0.7em; height: 1.9em; letter-spacing: 0.04em; }
+
+.mt-hint-touch {
+  position: absolute;
+  padding: 8px 16px;
+  border-radius: 18px;
+  background: rgba(8, 7, 30, 0.55);
+  border: 2px solid rgba(140, 200, 255, 0.4);
+  font-size: clamp(18px, 4.6vw, 26px);
+  font-weight: 900;
+  white-space: nowrap;
+  text-shadow: 0 2px 0 var(--mt-outline);
+  max-width: none;
+}
+.mt-hint-touch b { color: #ff9dd9; }
+/* sits above the joystick's resting spot (see .mt-stick-base) */
+.mt-hint-touch--stick {
+  left: max(20px, env(safe-area-inset-left));
+  bottom: calc(max(0px, env(safe-area-inset-bottom)) + 200px);
+  animation: mt-hint-nudge 1.6s ease-in-out infinite;
+}
+.mt-hint-finger {
+  display: inline-block;
+  width: 0.8em;
+  height: 0.8em;
+  margin-right: 0.4em;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #ffffff, #8fe9ff 45%, #3a7bd5);
+  box-shadow: 0 0 10px rgba(127, 233, 255, 0.8);
+  vertical-align: -0.05em;
+}
+/* sits above the FIRE button */
+.mt-hint-touch--fire {
+  right: max(16px, env(safe-area-inset-right));
+  bottom: calc(max(28px, env(safe-area-inset-bottom)) + 132px);
+}
+@keyframes mt-hint-nudge {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+
 /* --------------------------------------------------------------- touch */
 
 .mt-touch {
@@ -317,6 +422,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .mt-hint-touch--stick,
   .mt-flash--on,
   .mt-hud-banner--new,
   .mt-hud-banner--correct,
