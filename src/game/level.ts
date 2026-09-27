@@ -279,6 +279,9 @@ export class LevelController {
     if (this.disposed) return null;
     const { gfx, input, lasers, field, particles } = this.ctx;
     this.simTime += dt;
+    // The answer clock starts once the rocks have flown in; otherwise the first
+    // answer of every level would count as slow for mastery.
+    if (field.entering) this.qStart = this.simTime;
 
     // ship
     input.read(this.controls);

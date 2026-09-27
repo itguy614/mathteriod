@@ -4,7 +4,7 @@ import { isSkillId } from '../learning/skills';
 import { buildNewProfile, defaultSettings, freeItemIds, type ProfileStore } from './ProfileStore';
 
 export const STORAGE_KEY = 'mathteroid:v1';
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 /** Shape of the blob stored under STORAGE_KEY. */
 interface StoredData {
@@ -14,11 +14,26 @@ interface StoredData {
 
 type Migration = (data: StoredData) => StoredData;
 
-/**
- * Schema migrations keyed by the version they upgrade FROM.
- * Add `1: (d) => ({ ...d, version: 2, profiles: d.profiles.map(...) })` when v2 lands.
- */
-const MIGRATIONS: Record<number, Migration> = {};
+/** Schema migrations keyed by the version they upgrade FROM. */
+const MIGRATIONS: Record<number, Migration> = {
+  /**
+   * v1 → v2: v1 recorded every stray hit as a separate miss and timed the first answer
+   * of each level from before the rocks flew in, which kept kids from being promoted
+   * (a playtester reached level 74 still on addition). Drop the recent windows that
+   * promotion reads so it's judged on fresh answers; lifetime attempts/correct stay.
+   */
+  1: (d) => ({
+    ...d,
+    version: 2,
+    profiles: d.profiles.map((p) => {
+      if (!p?.learning?.factStats) return p;
+      const factStats = Object.fromEntries(
+        Object.entries(p.learning.factStats).map(([id, st]) => [id, { ...st, recent: [], recentMs: [] }]),
+      );
+      return { ...p, learning: { ...p.learning, factStats } };
+    }),
+  }),
+};
 
 export function migrate(raw: unknown): StoredData {
   if (!raw || typeof raw !== 'object') return { version: SCHEMA_VERSION, profiles: [] };

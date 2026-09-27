@@ -10,7 +10,7 @@ vi.mock('../learning/index', () => ({
   }),
 }));
 
-import { LocalProfileStore, STORAGE_KEY } from './LocalProfileStore';
+import { LocalProfileStore, SCHEMA_VERSION, STORAGE_KEY, migrate } from './LocalProfileStore';
 import { MemoryStorage } from './test-helpers';
 
 describe('LocalProfileStore', () => {
@@ -29,7 +29,7 @@ describe('LocalProfileStore', () => {
     expect(p.settings).toEqual({ musicVolume: 0.5, sfxVolume: 0.8, readAloud: false, controlMode: 'direct', touchMode: 'tapdrag' });
 
     const raw = JSON.parse(storage.getItem(STORAGE_KEY)!);
-    expect(raw.version).toBe(1);
+    expect(raw.version).toBe(SCHEMA_VERSION);
     expect(raw.profiles).toHaveLength(1);
 
     const again = new LocalProfileStore(storage);
@@ -102,5 +102,19 @@ describe('LocalProfileStore', () => {
     await store.save(p);
     const again = (await new LocalProfileStore(storage).get(p.id))!;
     expect(again.practiceSkills).toEqual(['mul:7', 'sub:8']);
+  });
+
+  it('v1 → v2 clears recent mastery windows but keeps lifetime stats and progress', () => {
+    const stat = { attempts: 30, correct: 20, recent: [true, false, false], recentMs: [5200, 1800], lastSeen: 1 };
+    const v1 = {
+      version: 1,
+      profiles: [{ id: 'p1', learning: { stageIndex: 3, levelInStage: 70, clearedInStage: 60, levelsCleared: 73, consecutiveFailures: 0, factStats: { 'add:2:3': stat } } }],
+    };
+    const out = migrate(v1);
+    expect(out.version).toBe(SCHEMA_VERSION);
+    const learning = out.profiles[0].learning;
+    expect(learning.stageIndex).toBe(3);
+    expect(learning.levelsCleared).toBe(73);
+    expect(learning.factStats['add:2:3']).toMatchObject({ attempts: 30, correct: 20, recent: [], recentMs: [] });
   });
 });

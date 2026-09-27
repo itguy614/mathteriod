@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AnswerEvent, FactStat, LearningState, LevelResult } from '../types';
-import { DIFFICULTY, LearningEngine, MASTERY, initialLearningState } from './engine';
+import { DIFFICULTY, LearningEngine, MASTERY, groupByQuestion, initialLearningState } from './engine';
 import { STAGES } from './curriculum';
 import { factById } from './facts';
 
@@ -124,16 +124,36 @@ describe('LearningEngine basics', () => {
     for (let i = 0; i < 20; i++) answers.push({ factId: 'add:2:3', correct: i % 4 !== 0, responseMs: 1000 + i, chosenValue: 5 });
     const sum = engine.recordLevel(level('cleared', answers));
     const st = engine.getState().factStats['add:2:3'];
-    expect(st.attempts).toBe(20);
-    expect(st.correct).toBe(15);
+    // W C C C W C C C ...: 15 questions (a wrong hit and its follow-up correct are one
+    // question), 10 of them right on the first hit.
+    expect(st.attempts).toBe(15);
+    expect(st.correct).toBe(10);
     expect(st.recent.length).toBeLessThanOrEqual(8);
     expect(st.recentMs.length).toBeLessThanOrEqual(8);
     expect(st.recentMs[st.recentMs.length - 1]).toBe(1019);
     expect(st.lastSeen).toBe(12345);
-    expect(sum.accuracy).toBeCloseTo(0.75);
+    expect(sum.accuracy).toBeCloseTo(10 / 15);
     expect(sum.medianCorrectMs).not.toBeNull();
     expect(engine.getState().levelsCleared).toBe(1);
     expect(engine.getState().levelInStage).toBe(1);
+  });
+
+  it('scores each question on its first hit only (stray shots count as one miss)', () => {
+    const engine = new LearningEngine(stateAt(0), seeded(5));
+    const hit = (factId: string, correct: boolean, ms = 1500): AnswerEvent => ({ factId, correct, responseMs: ms, chosenValue: 0 });
+    const sum = engine.recordLevel(
+      level('cleared', [hit('add:2:3', true), hit('add:1:4', false), hit('add:1:4', false), hit('add:1:4', true, 5000), hit('add:3:3', true)]),
+    );
+    const stats = engine.getState().factStats;
+    expect(stats['add:1:4']).toMatchObject({ attempts: 1, correct: 0, recent: [false], recentMs: [] });
+    expect(stats['add:2:3']).toMatchObject({ attempts: 1, correct: 1, recent: [true], recentMs: [1500] });
+    expect(sum.accuracy).toBeCloseTo(2 / 3);
+  });
+
+  it('groups hits into questions, including a trailing unanswered one', () => {
+    const e = (factId: string, correct: boolean): AnswerEvent => ({ factId, correct, responseMs: 1, chosenValue: 0 });
+    const groups = groupByQuestion([e('a', false), e('a', true), e('b', true), e('c', false)]);
+    expect(groups.map((g) => g.length)).toEqual([2, 1, 1]);
   });
 });
 
@@ -315,5 +335,40 @@ describe('promotion', () => {
     expect(p0).toBeGreaterThanOrEqual(0);
     expect(p1).toBeGreaterThan(p0);
     expect(p1).toBeLessThanOrEqual(1);
+  });
+});
+
+describe('pace (playtest: level 74 and still on addition)', () => {
+  /** Play one level as a kid who answers every question right, first try, in `ms`. */
+  function playPerfectLevel(engine: LearningEngine, ms: number): void {
+    const config = engine.buildLevel();
+    const live = config.questions.initialValues(config.initialAsteroids);
+    const answers: AnswerEvent[] = [];
+    while (live.length > 0) {
+      const q = config.questions.pickQuestion(live);
+      live.splice(live.indexOf(q.answer), 1);
+      answers.push({ factId: q.factId, correct: true, responseMs: ms, chosenValue: q.answer });
+    }
+    engine.recordLevel(level('cleared', answers));
+  }
+
+  it('a kid who knows addition reaches subtraction in about 15 levels', () => {
+    const firstSub = STAGES.findIndex((s) => s.op === 'sub');
+    for (const seed of [1, 2, 3, 4, 5]) {
+      const engine = new LearningEngine(initialLearningState(), seeded(seed));
+      let levels = 0;
+      while (engine.getState().stageIndex < firstSub && levels < 100) {
+        playPerfectLevel(engine, 2000);
+        levels++;
+      }
+      expect(levels).toBeGreaterThanOrEqual(10);
+      expect(levels).toBeLessThanOrEqual(22);
+    }
+  });
+
+  it('slow answers keep a kid in the stage', () => {
+    const engine = new LearningEngine(initialLearningState(), seeded(9));
+    for (let i = 0; i < 15; i++) playPerfectLevel(engine, MASTERY.fastMs + 2000);
+    expect(engine.getState().stageIndex).toBe(0);
   });
 });

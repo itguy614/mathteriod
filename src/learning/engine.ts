@@ -5,6 +5,7 @@
  * Pure TypeScript: no DOM, no Three.js. Randomness and the clock are injectable.
  */
 import type {
+  AnswerEvent,
   Fact,
   FactStat,
   LearningState,
@@ -73,6 +74,28 @@ export function initialLearningState(): LearningState {
 
 function cloneStat(s: FactStat): FactStat {
   return { attempts: s.attempts, correct: s.correct, recentMs: [...s.recentMs], recent: [...s.recent], lastSeen: s.lastSeen };
+}
+
+/**
+ * Split a level's hit log into questions. The game reports every hit; a question
+ * ends with its correct hit (a failed level may leave a trailing unanswered one).
+ */
+export function groupByQuestion(answers: AnswerEvent[]): AnswerEvent[][] {
+  const out: AnswerEvent[][] = [];
+  let cur: AnswerEvent[] = [];
+  for (const e of answers) {
+    if (cur.length > 0 && e.factId !== cur[0].factId) {
+      out.push(cur); // defensive: fact changed without a correct hit
+      cur = [];
+    }
+    cur.push(e);
+    if (e.correct) {
+      out.push(cur);
+      cur = [];
+    }
+  }
+  if (cur.length > 0) out.push(cur);
+  return out;
 }
 
 function cloneState(s: LearningState): LearningState {
@@ -315,7 +338,7 @@ export function evaluateMastery(stage: StageDef, state: LearningState): MasteryR
   for (const f of stage.facts) {
     const st = state.factStats[f.id];
     if (!st) continue;
-    if (st.attempts >= MASTERY.minAttemptsPerFact) covered++;
+    if (st.attempts >= MASTERY.coverageAttempts) covered++;
     outcomes += st.recent.length;
     correct += st.recent.filter(Boolean).length;
     times += st.recentMs.length;
@@ -471,26 +494,32 @@ export class LearningEngine {
     };
   }
 
-  /** Fold a level's answers into the per-fact stats (shared by missions and practice). */
+  /**
+   * Fold a level's answers into the per-fact stats (shared by missions and practice).
+   * Scored per question on the FIRST hit: the game reports every hit, and stray
+   * shots at other rocks shouldn't count as several misses on a fact the kid knows.
+   */
   private recordAnswers(result: LevelResult): { accuracy: number; medianCorrectMs: number | null } {
     const s = this.state;
     const ts = this.now();
-    for (const e of result.answers) {
-      const st = s.factStats[e.factId] ?? { attempts: 0, correct: 0, recentMs: [], recent: [], lastSeen: 0 };
+    const questions = groupByQuestion(result.answers);
+    for (const q of questions) {
+      const first = q[0];
+      const st = s.factStats[first.factId] ?? { attempts: 0, correct: 0, recentMs: [], recent: [], lastSeen: 0 };
       st.attempts++;
-      st.recent.push(e.correct);
-      if (e.correct) {
+      st.recent.push(first.correct);
+      if (first.correct) {
         st.correct++;
-        if (Number.isFinite(e.responseMs) && e.responseMs >= 0) st.recentMs.push(e.responseMs);
+        if (Number.isFinite(first.responseMs) && first.responseMs >= 0) st.recentMs.push(first.responseMs);
       }
       if (st.recent.length > RECENT_WINDOW) st.recent.splice(0, st.recent.length - RECENT_WINDOW);
       if (st.recentMs.length > RECENT_WINDOW) st.recentMs.splice(0, st.recentMs.length - RECENT_WINDOW);
       st.lastSeen = ts;
-      s.factStats[e.factId] = st;
+      s.factStats[first.factId] = st;
     }
-    const nCorrect = result.answers.filter((a) => a.correct).length;
-    const accuracy = result.answers.length > 0 ? nCorrect / result.answers.length : 0;
-    const medianCorrectMs = median(result.answers.filter((a) => a.correct).map((a) => a.responseMs));
+    const firstTry = questions.filter((q) => q[0].correct);
+    const accuracy = questions.length > 0 ? firstTry.length / questions.length : 0;
+    const medianCorrectMs = median(firstTry.map((q) => q[0].responseMs));
     return { accuracy, medianCorrectMs };
   }
 

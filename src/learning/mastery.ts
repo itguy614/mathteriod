@@ -15,12 +15,18 @@ export const MASTERY = {
   fastMs: 4000,
   /** Share of recent correct answers that must be fast. */
   fastShare: 0.75,
-  /** A fact counts as "covered" once attempted this many times. */
+  /** A fact counts as individually mastered (skill meters) once attempted this many times. */
   minAttemptsPerFact: 2,
+  /** For stage promotion, a fact counts as "covered" once attempted this many times. */
+  coverageAttempts: 1,
   /** Fraction of the stage's facts that must be covered... */
-  coverage: 0.8,
-  /** ...capped at this many facts, so big review stages stay reachable. */
-  maxCoverageFacts: 40,
+  coverage: 0.5,
+  /**
+   * ...capped at this many facts. Levels only ask ~3-5 questions, so this sets the
+   * pace: ~3 levels per stage for a kid who knows the facts (~15 levels for all of
+   * addition). Playtest: the old 80%/40-facts/2-attempts gate took 85+ levels.
+   */
+  maxCoverageFacts: 12,
   /** Minimum levels played in the stage (promotion also requires clearing the current one). */
   minLevels: 2,
 };
