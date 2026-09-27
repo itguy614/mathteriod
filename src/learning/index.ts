@@ -24,5 +24,22 @@ export {
   evaluateMastery,
   progressFromReport,
   constructFactForAnswer,
+  factMastered,
+  PRACTICE,
+  practiceName,
 } from './engine';
-export type { MasteryReport } from './engine';
+export type { MasteryReport, PracticeLevelOptions } from './engine';
+export {
+  SKILLS,
+  SKILL_SYMBOL,
+  SKILL_FAST_SHARE,
+  NEEDS_PRACTICE,
+  isSkillId,
+  skillById,
+  skillsFor,
+  skillLabel,
+  factsForSkills,
+  skillMastery,
+  weakestFacts,
+} from './skills';
+export type { SkillId, SkillDef, SkillLevel, SkillMastery } from './skills';

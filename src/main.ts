@@ -2,11 +2,11 @@
  * Mathteroid entry point: wires audio, game, learning, store and UI together
  * and owns the screen flow (a small state machine driven by UI callbacks).
  */
-import type { LevelConfig, LevelResult, Profile, Question, Settings } from './types';
+import type { Fact, LevelConfig, LevelResult, Operation, Profile, Question, Settings } from './types';
 import { AudioEngine, speechSupported } from './audio';
 import { createGame } from './game/index';
-import { LearningEngine } from './learning/index';
-import { LocalProfileStore, resetProfileProgress, stardustForLevel } from './store';
+import { LearningEngine, isSkillId, weakestFacts } from './learning/index';
+import { LocalProfileStore, resetProfileProgress, stardustForLevel, stardustForPractice } from './store';
 import { Router } from './ui/router';
 import { hangarCenter } from './ui/layout';
 import { titleScreen } from './ui/screens/title';
@@ -19,6 +19,7 @@ import { playingScreen } from './ui/screens/playing';
 import { pauseScreen } from './ui/screens/pause';
 import { resultsScreen } from './ui/screens/results';
 import { settingsScreen } from './ui/screens/settings';
+import { practiceScreen } from './ui/screens/practice';
 
 const LAST_PILOT_KEY = 'mathteroid:lastPilot';
 
@@ -50,6 +51,20 @@ uiRoot.addEventListener('click', (e) => {
 let profile: Profile | null = null;
 let playing = false;
 let paused = false;
+
+/**
+ * The running practice session, or null during missions. The streak (clears in
+ * a row) drives the pace ramp; it resets on a fail, and a new session (picked
+ * from the picker) starts fresh.
+ */
+interface PracticeSession {
+  /** Skill ids, or the fixed fact list of a "Needs practice" session. */
+  selection: { kind: 'skills'; ids: string[] } | { kind: 'weak'; facts: Fact[] };
+  streak: number;
+  /** Levels played this session (kid-facing round number). */
+  round: number;
+}
+let practice: PracticeSession | null = null;
 
 let saveChain: Promise<void> = Promise.resolve();
 /** Serialize saves so a slow write never overwrites a newer one. */
@@ -136,6 +151,7 @@ function selectProfile(p: Profile): void {
 }
 
 function goHome(): void {
+  practice = null;
   const p = requireProfile();
   const engine = new LearningEngine(p.learning);
   game.showHangar(p.loadout, hangarCenter());
@@ -145,6 +161,7 @@ function goHome(): void {
       stageName: engine.currentStage().name,
       stageProgress: engine.stageProgress(),
       onLaunch: launchLevel,
+      onPractice: goPractice,
       onHangar: goHangar,
       onSettings: goSettings,
       onSwitchPilot: () => void goProfiles(),
@@ -210,6 +227,7 @@ function goSettings(): void {
 // ---------------------------------------------------------------------------
 
 function launchLevel(): void {
+  practice = null;
   const p = requireProfile();
   const engine = new LearningEngine(p.learning);
   let config: LevelConfig;
@@ -232,9 +250,10 @@ function startPlay(engine: LearningEngine, config: LevelConfig): void {
   game.startLevel(config, p.loadout, {
     onQuestion: (q: Question) => audio.speak(q.speech),
     onPause: pauseGame,
-    onLevelEnd: (result: LevelResult) => void finishLevel(engine, result),
+    onLevelEnd: (result: LevelResult) => void (practice ? finishPractice(engine, result) : finishLevel(engine, result)),
   }, {
     controlMode: p.settings.controlMode,
+    touchMode: p.settings.touchMode,
     // New pilots get the fading controls hint on their first few levels.
     showControlsHint: p.learning.levelsCleared < 3,
   });
@@ -247,7 +266,11 @@ function pauseGame(): void {
   paused = true;
   game.pause();
   audio.setThrust(false);
-  router.show(pauseScreen({ onResume: resumeGame, onQuit: quitToBase }));
+  router.show(
+    practice
+      ? pauseScreen({ onResume: resumeGame, onQuit: quitToBase, quitLabel: 'Quit', quitIcon: '🎯' })
+      : pauseScreen({ onResume: resumeGame, onQuit: quitToBase }),
+  );
 }
 
 function resumeGame(): void {
@@ -262,7 +285,9 @@ function quitToBase(): void {
   paused = false;
   game.stop();
   audio.setThrust(false);
-  goHome();
+  // Practice quits back to the picker (its back button leads home).
+  if (practice) goPractice();
+  else goHome();
 }
 
 async function finishLevel(engine: LearningEngine, result: LevelResult): Promise<void> {
@@ -289,6 +314,106 @@ async function finishLevel(engine: LearningEngine, result: LevelResult): Promise
       onRetry: launchLevel,
       onHangar: goHangar,
       onBase: goHome,
+    }),
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Practice flow
+// ---------------------------------------------------------------------------
+
+function goPractice(): void {
+  const p = requireProfile();
+  practice = null;
+  game.showAttract();
+  const stageOp = new LearningEngine(p.learning).currentStage().op;
+  const defaultOp: Operation = stageOp === 'mixed' ? 'add' : stageOp;
+  router.show(
+    practiceScreen({
+      learning: p.learning,
+      selected: (p.practiceSkills ?? []).filter(isSkillId),
+      defaultOp,
+      onStart: (ids) => {
+        const cur = requireProfile();
+        cur.practiceSkills = [...ids];
+        void persist(cur);
+        startPracticeSession({ kind: 'skills', ids });
+      },
+      onNeedsPractice: () => {
+        const facts = weakestFacts(requireProfile().learning);
+        if (facts.length) startPracticeSession({ kind: 'weak', facts });
+      },
+      onBack: goHome,
+    }),
+  );
+}
+
+function startPracticeSession(selection: PracticeSession['selection']): void {
+  practice = { selection, streak: 0, round: 0 };
+  launchPractice();
+}
+
+function launchPractice(): void {
+  const p = requireProfile();
+  const session = practice;
+  if (!session) {
+    goPractice();
+    return;
+  }
+  session.round++;
+  const engine = new LearningEngine(p.learning);
+  const sel = session.selection;
+  let config: LevelConfig;
+  try {
+    config =
+      sel.kind === 'skills'
+        ? engine.buildPracticeLevel(sel.ids, session.streak, { levelNumber: session.round })
+        : engine.buildPracticeLevel(sel.facts, session.streak, { levelNumber: session.round, name: 'Needs practice' });
+  } catch (err) {
+    console.error('[main] could not build practice level', err);
+    goPractice();
+    return;
+  }
+  // "Practice · ×6 ×7 ×8" (shortened like the level name) over "Round 2".
+  const kicker = sel.kind === 'skills' ? config.stageName.replace(/^Practice: /, 'Practice · ') : '💪 Needs practice';
+  game.showAttract();
+  router.show(
+    levelIntroScreen({
+      config,
+      audio,
+      kicker,
+      title: `Round ${session.round}`,
+      onDone: () => startPlay(engine, config),
+    }),
+  );
+}
+
+async function finishPractice(engine: LearningEngine, result: LevelResult): Promise<void> {
+  if (!playing || !practice) return;
+  playing = false;
+  paused = false;
+  audio.setThrust(false);
+  const session = practice;
+  const p = requireProfile();
+  const summary = engine.recordPractice(result);
+  p.learning = engine.getState();
+  const earned = stardustForPractice(result, summary);
+  p.stardust += earned;
+  // Practice scores never touch bestScore (players pick their own difficulty).
+  session.streak = result.outcome === 'cleared' ? session.streak + 1 : 0;
+  await persist(p);
+  router.show(
+    resultsScreen({
+      result,
+      summary,
+      earned,
+      newBest: false,
+      audio,
+      onNext: launchPractice,
+      onRetry: launchPractice,
+      onHangar: goHangar,
+      onBase: goHome,
+      practice: { streak: session.streak, onPlayAgain: launchPractice, onChangeSkills: goPractice },
     }),
   );
 }

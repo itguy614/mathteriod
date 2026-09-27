@@ -2,9 +2,13 @@ import type { AudioBus, LevelConfig } from '../../types';
 import { h } from '../dom';
 import type { Screen } from '../router';
 
-/** "Level N · Stage" card, then a 3-2-1 countdown, then onDone(). */
-export function levelIntroScreen(opts: { config: LevelConfig; audio: AudioBus; onDone(): void }): Screen {
+/**
+ * "Level N · Stage" card, then a 3-2-1 countdown, then onDone().
+ * Practice passes `kicker` ("Practice · ×6 ×7") and `title` ("Round 2") instead.
+ */
+export function levelIntroScreen(opts: { config: LevelConfig; audio: AudioBus; kicker?: string; title?: string; onDone(): void }): Screen {
   const { config } = opts;
+  const kicker = opts.kicker ?? `Level ${config.levelNumber}`;
   const count = h('div', { class: 'countdown', 'aria-live': 'assertive' });
   const el = h(
     'div',
@@ -12,8 +16,8 @@ export function levelIntroScreen(opts: { config: LevelConfig; audio: AudioBus; o
     h(
       'div',
       { class: 'intro-card' },
-      h('div', { class: 'intro-level' }, `Level ${config.levelNumber}`),
-      h('div', { class: 'intro-stage' }, config.stageName),
+      h('div', { class: 'intro-level' }, kicker),
+      h('div', { class: 'intro-stage' }, opts.title ?? config.stageName),
       config.eased ? h('div', { class: 'intro-eased' }, h('span', { 'aria-hidden': 'true' }, '🌱'), ' Warm-up round') : null,
     ),
     count,
@@ -36,7 +40,7 @@ export function levelIntroScreen(opts: { config: LevelConfig; audio: AudioBus; o
     el,
     passThrough: true,
     onEnter() {
-      opts.audio.speak(`Level ${config.levelNumber}`);
+      opts.audio.speak(opts.kicker ? (opts.title ?? 'Practice') : kicker);
       const steps = ['3', '2', '1'];
       steps.forEach((s, i) => {
         timers.push(

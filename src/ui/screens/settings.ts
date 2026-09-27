@@ -1,4 +1,4 @@
-import type { ControlMode, Profile, Settings } from '../../types';
+import type { ControlMode, Profile, Settings, TouchMode } from '../../types';
 import { h } from '../dom';
 import type { Router, Screen } from '../router';
 
@@ -86,6 +86,35 @@ export function settingsScreen(opts: {
   }
   setMode(settings.controlMode);
 
+  // Touch controls: only shown on touch-capable devices.
+  const touchCapable =
+    (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches) || navigator.maxTouchPoints > 0;
+  const touchModes: Array<{ mode: TouchMode; label: string; tip: string }> = [
+    { mode: 'tapdrag', label: '👆 Tap & drag', tip: 'Tap a rock to shoot, drag to fly' },
+    { mode: 'joystick', label: '🕹️ Joystick', tip: 'Joystick + FIRE button' },
+  ];
+  const touchTip = h('p', { class: 'hint' });
+  const touchButtons = touchModes.map((m) =>
+    h('button', {
+      class: 'seg-btn',
+      role: 'radio',
+      onclick: () => {
+        setTouchMode(m.mode);
+        opts.onChange({ ...settings });
+      },
+    }, m.label),
+  );
+  function setTouchMode(mode: TouchMode): void {
+    settings.touchMode = mode;
+    touchButtons.forEach((b, i) => {
+      const on = touchModes[i].mode === mode;
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-checked', String(on));
+    });
+    touchTip.textContent = touchModes.find((m) => m.mode === mode)!.tip;
+  }
+  setTouchMode(settings.touchMode === 'joystick' ? 'joystick' : 'tapdrag');
+
   const el = h(
     'div',
     { class: 'page settings' },
@@ -122,6 +151,16 @@ export function settingsScreen(opts: {
         h('div', { class: 'seg', role: 'radiogroup', 'aria-label': 'Steering' }, ...segButtons),
       ),
       steerTip,
+      touchCapable
+        ? h(
+            'div',
+            { class: 'setting-row' },
+            h('span', { class: 'setting-icon', 'aria-hidden': 'true' }, '📱'),
+            h('span', { class: 'setting-label' }, 'Touch controls'),
+            h('div', { class: 'seg', role: 'radiogroup', 'aria-label': 'Touch controls' }, ...touchButtons),
+          )
+        : null,
+      touchCapable ? touchTip : null,
       h('hr', { class: 'divider' }),
       h(
         'div',

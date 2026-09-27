@@ -12,6 +12,8 @@ export const ACCURACY_BONUS_THRESHOLD = 0.9;
 export const ACCURACY_BONUS = 15;
 /** Failed levels still pay for correct answers, at this fraction (effort is rewarded). */
 export const FAILED_MULTIPLIER = 0.6;
+/** Practice pays this fraction of the mission rate (players pick their own difficulty). */
+export const PRACTICE_MULTIPLIER = 0.75;
 
 export interface StardustBreakdown {
   correct: number;
@@ -22,8 +24,11 @@ export interface StardustBreakdown {
   total: number;
 }
 
-/** Detailed stardust earnings for a finished level. */
-export function stardustBreakdown(result: LevelResult, summary: LevelSummary): StardustBreakdown {
+/**
+ * Detailed stardust earnings for a finished level. `rate` scales every part
+ * (1 for missions, PRACTICE_MULTIPLIER for practice).
+ */
+export function stardustBreakdown(result: LevelResult, summary: LevelSummary, rate = 1): StardustBreakdown {
   const correctAnswers = result.answers.filter((a) => a.correct);
   const cleared = result.outcome === 'cleared';
   let correct = correctAnswers.length * STARDUST_PER_CORRECT;
@@ -32,16 +37,28 @@ export function stardustBreakdown(result: LevelResult, summary: LevelSummary): S
     correct = Math.round(correct * FAILED_MULTIPLIER);
     speed = Math.round(speed * FAILED_MULTIPLIER);
   }
-  const clear = cleared ? CLEAR_BONUS : 0;
-  const accuracy = cleared && summary.accuracy >= ACCURACY_BONUS_THRESHOLD ? ACCURACY_BONUS : 0;
+  let clear = cleared ? CLEAR_BONUS : 0;
+  let accuracy = cleared && summary.accuracy >= ACCURACY_BONUS_THRESHOLD ? ACCURACY_BONUS : 0;
   const promotion = summary.promoted ? PROMOTION_BONUS : 0;
+  if (rate !== 1) {
+    correct = Math.round(correct * rate);
+    speed = Math.round(speed * rate);
+    clear = Math.round(clear * rate);
+    accuracy = Math.round(accuracy * rate);
+  }
+  const promo = Math.round(promotion * rate);
   // A failed level with at least one right answer always earns something.
-  const total = Math.max(correct + speed + clear + accuracy + promotion, correctAnswers.length > 0 ? 5 : 0);
-  return { correct, speed, clear, accuracy, promotion, total };
+  const total = Math.max(correct + speed + clear + accuracy + promo, correctAnswers.length > 0 ? 5 : 0);
+  return { correct, speed, clear, accuracy, promotion: promo, total };
 }
 
 export function stardustForLevel(result: LevelResult, summary: LevelSummary): number {
   return stardustBreakdown(result, summary).total;
+}
+
+/** Stardust for a practice level: about PRACTICE_MULTIPLIER of the mission rate. */
+export function stardustForPractice(result: LevelResult, summary: LevelSummary): number {
+  return stardustBreakdown(result, summary, PRACTICE_MULTIPLIER).total;
 }
 
 /** 1-3 stars for a cleared level, based on accuracy. 0 when failed. */

@@ -3,11 +3,13 @@ import type { AnswerEvent, LevelResult, LevelSummary, Profile } from '../types';
 import { defaultLoadout } from '../catalog';
 import {
   CLEAR_BONUS,
+  PRACTICE_MULTIPLIER,
   PROMOTION_BONUS,
   equip,
   isEquipped,
   purchase,
   stardustForLevel,
+  stardustForPractice,
   starsForAccuracy,
 } from './economy';
 
@@ -37,7 +39,7 @@ function profile(stardust: number): Profile {
     owned: ['arrow', 'saucer', 'stingray', 'cyan', 'pulse', 'ion'],
     loadout: defaultLoadout('arrow'),
     bestScore: 0,
-    settings: { musicVolume: 0.5, sfxVolume: 0.8, readAloud: false, controlMode: 'direct' },
+    settings: { musicVolume: 0.5, sfxVolume: 0.8, readAloud: false, controlMode: 'direct', touchMode: 'tapdrag' },
   };
 }
 
@@ -68,6 +70,32 @@ describe('stardustForLevel', () => {
 
   it('pays nothing for a failed level with no correct answers', () => {
     expect(stardustForLevel(result('failed', answers(0, 3)), summary(0))).toBe(0);
+  });
+});
+
+describe('stardustForPractice', () => {
+  it('pays about 75% of the mission rate', () => {
+    expect(PRACTICE_MULTIPLIER).toBe(0.75);
+    // Mission: 8 slow correct = 80 + clear 25 = 105. Practice: 60 + 19 = 79.
+    const r = result('cleared', answers(8, 2));
+    expect(stardustForLevel(r, summary(0.8))).toBe(105);
+    expect(stardustForPractice(r, summary(0.8))).toBe(79);
+    for (const [c, w, ms, outcome] of [
+      [10, 0, 1500, 'cleared'],
+      [6, 4, 5000, 'cleared'],
+      [6, 4, 2000, 'failed'],
+    ] as const) {
+      const rr = result(outcome, answers(c, w, ms));
+      const mission = stardustForLevel(rr, summary(c / (c + w)));
+      const practice = stardustForPractice(rr, summary(c / (c + w)));
+      expect(practice).toBeLessThan(mission);
+      expect(practice / mission).toBeCloseTo(0.75, 1);
+    }
+  });
+
+  it('still pays a little for effort and nothing for no correct answers', () => {
+    expect(stardustForPractice(result('failed', answers(1, 5)), summary(0.17))).toBe(5);
+    expect(stardustForPractice(result('failed', answers(0, 3)), summary(0))).toBe(0);
   });
 });
 

@@ -197,11 +197,21 @@ export interface AudioBus {
  */
 export type ControlMode = 'rotate' | 'direct';
 
+/**
+ * Touch devices only.
+ * 'tapdrag':  no joystick. Quick tap on a rock = turn + fire at it; hold/drag on empty
+ *             space = fly toward the finger; small FIRE button shoots straight ahead.
+ * 'joystick': small fixed, always-visible joystick in the bottom-left corner + FIRE;
+ *             touches that start on a rock are still tap-to-target.
+ */
+export type TouchMode = 'tapdrag' | 'joystick';
+
 export interface Settings {
   musicVolume: number; // 0..1
   sfxVolume: number;   // 0..1
   readAloud: boolean;
   controlMode: ControlMode;
+  touchMode: TouchMode;
 }
 
 export interface Profile {
@@ -216,6 +226,8 @@ export interface Profile {
   loadout: ShipLoadout;
   bestScore: number;
   settings: Settings;
+  /** Practice mode: the skill ids last picked (e.g. ["mul:7"]). Optional for older saves. */
+  practiceSkills?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -236,6 +248,7 @@ export interface GameCallbacks {
 
 export interface LevelOptions {
   controlMode: ControlMode;
+  touchMode: TouchMode;
   /** Show the fading on-screen controls hint (new pilots' first levels). */
   showControlsHint: boolean;
 }

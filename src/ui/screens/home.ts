@@ -7,6 +7,7 @@ export function homeScreen(opts: {
   stageName: string;
   stageProgress: number;
   onLaunch(): void;
+  onPractice(): void;
   onHangar(): void;
   onSettings(): void;
   onSwitchPilot(): void;
@@ -19,6 +20,12 @@ export function homeScreen(opts: {
     { class: 'btn btn-primary btn-huge launch-btn', onclick: opts.onLaunch },
     h('span', { 'aria-hidden': 'true' }, '🚀'),
     ' Launch',
+  );
+  const practice = h(
+    'button',
+    { class: 'btn btn-practice practice-btn', onclick: opts.onPractice, 'aria-label': 'Practice' },
+    h('span', { class: 'practice-btn-icon', 'aria-hidden': 'true' }, '🎯'),
+    h('span', { class: 'practice-btn-word' }, 'Practice'),
   );
 
   const el = h(
@@ -52,7 +59,7 @@ export function homeScreen(opts: {
         ),
         p.bestScore > 0 ? h('div', { class: 'best' }, h('span', { 'aria-hidden': 'true' }, '🏆'), ` Best ${p.bestScore.toLocaleString()}`) : null,
       ),
-      launch,
+      h('div', { class: 'launch-row' }, launch, practice),
       h('button', { class: 'btn btn-secondary btn-big', onclick: opts.onHangar }, h('span', { 'aria-hidden': 'true' }, '🛠️'), ' Hangar'),
     ),
   );

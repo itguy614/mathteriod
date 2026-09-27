@@ -1,0 +1,80 @@
+/**
+ * Mastery thresholds shared by the stage gate (engine.ts) and the per-skill
+ * meters (skills.ts), plus the per-fact practice weight. No imports from engine.ts.
+ */
+import type { FactStat } from '../types';
+
+/**
+ * Mastery gate. Response times include flying and aiming at the asteroid,
+ * so these are looser than flashcard thresholds.
+ */
+export const MASTERY = {
+  /** Pooled accuracy over the recent windows of the stage's facts. */
+  accuracy: 0.9,
+  /** A correct answer faster than this counts as "fast". */
+  fastMs: 4000,
+  /** Share of recent correct answers that must be fast. */
+  fastShare: 0.75,
+  /** A fact counts as "covered" once attempted this many times. */
+  minAttemptsPerFact: 2,
+  /** Fraction of the stage's facts that must be covered... */
+  coverage: 0.8,
+  /** ...capped at this many facts, so big review stages stay reachable. */
+  maxCoverageFacts: 40,
+  /** Minimum levels played in the stage (promotion also requires clearing the current one). */
+  minLevels: 2,
+};
+
+/**
+ * True when a single fact is "fast-mastered": attempted at least
+ * MASTERY.minAttemptsPerFact times, recent accuracy at least MASTERY.accuracy,
+ * and at least MASTERY.fastShare of its recent correct times under MASTERY.fastMs.
+ * The per-fact version of the stage gate in evaluateMastery().
+ */
+export function factMastered(st: FactStat | undefined): boolean {
+  if (!st || st.attempts < MASTERY.minAttemptsPerFact || st.recent.length === 0 || st.recentMs.length === 0) return false;
+  const acc = st.recent.filter(Boolean).length / st.recent.length;
+  const fast = st.recentMs.filter((ms) => ms < MASTERY.fastMs).length / st.recentMs.length;
+  return acc >= MASTERY.accuracy && fast >= MASTERY.fastShare;
+}
+
+export function median(xs: number[]): number | null {
+  if (xs.length === 0) return null;
+  const s = [...xs].sort((a, b) => a - b);
+  const mid = s.length >> 1;
+  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+}
+
+/** True when the kid reliably knows a fact: recent accuracy high and mostly quick. */
+function isKnown(st: FactStat | undefined): boolean {
+  if (!st || st.recent.length < 2) return false;
+  const acc = st.recent.filter(Boolean).length / st.recent.length;
+  const med = median(st.recentMs);
+  return acc >= 0.8 && med !== null && med <= MASTERY.fastMs * 1.25;
+}
+
+/**
+ * Practice weight of a fact: higher = more likely to be asked.
+ * Normal levels favour unseen, recently missed and slow facts.
+ * Eased levels flip the bias toward facts the kid already knows.
+ */
+export function factWeight(st: FactStat | undefined, eased = false): number {
+  if (eased) {
+    if (!st) return 0.5;
+    return isKnown(st) ? 4 : 1;
+  }
+  if (!st || st.attempts === 0) return 3;
+  let w = 1;
+  if (st.recent.length > 0) {
+    const misses = st.recent.filter((r) => !r).length;
+    w += 4 * (misses / st.recent.length);
+    if (!st.recent[st.recent.length - 1]) w += 2; // just missed it
+  }
+  const med = median(st.recentMs);
+  if (med !== null && med > MASTERY.fastMs) {
+    w += Math.min(2, (2 * (med - MASTERY.fastMs)) / MASTERY.fastMs);
+  }
+  if (st.attempts < MASTERY.minAttemptsPerFact) w += 1;
+  if (isKnown(st)) w *= 0.6; // still reviewed, just less often
+  return w;
+}

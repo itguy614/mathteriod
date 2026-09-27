@@ -23,8 +23,14 @@ export function resultsScreen(opts: {
   onRetry(): void;
   onHangar(): void;
   onBase(): void;
+  /**
+   * Practice variant: Play again / Change skills / Base, never a promotion or
+   * "new best". `streak` = clears in a row this session (shown from 2).
+   */
+  practice?: { streak: number; onPlayAgain(): void; onChangeSkills(): void };
 }): Screen {
   const { result, summary } = opts;
+  const practice = opts.practice;
   const cleared = result.outcome === 'cleared';
   const correct = result.answers.filter((a) => a.correct).length;
   const stars = starsForAccuracy(summary.accuracy, cleared);
@@ -56,12 +62,18 @@ export function resultsScreen(opts: {
       h('span', { class: 'stat-icon', 'aria-hidden': 'true' }, '🎯'),
       h('span', { class: 'stat-value' }, result.score.toLocaleString()),
       h('span', { class: 'stat-label' }, 'score'),
-      opts.newBest ? h('span', { class: 'new-best' }, 'NEW BEST!') : null,
+      opts.newBest && !practice ? h('span', { class: 'new-best' }, 'NEW BEST!') : null,
     ),
   );
 
+  const promoted = summary.promoted && !practice;
+  const streakChip =
+    practice && cleared && practice.streak >= 2
+      ? h('div', { class: 'streak-chip', 'aria-label': `${practice.streak} in a row` }, h('span', { 'aria-hidden': 'true' }, '🔥'), ` ${practice.streak} in a row`)
+      : null;
+
   const promoBanner =
-    summary.promoted && summary.newStageName
+    promoted && summary.newStageName
       ? h(
           'div',
           { class: 'promo-banner' },
@@ -70,7 +82,13 @@ export function resultsScreen(opts: {
         )
       : null;
 
-  const buttons = cleared
+  const buttons = practice
+    ? [
+        h('button', { class: 'btn btn-primary btn-big', onclick: practice.onPlayAgain }, h('span', { 'aria-hidden': 'true' }, '🔁'), ' Play again'),
+        h('button', { class: 'btn btn-secondary', onclick: practice.onChangeSkills }, h('span', { 'aria-hidden': 'true' }, '🎯'), ' Change skills'),
+        h('button', { class: 'btn btn-ghost', onclick: opts.onBase }, h('span', { 'aria-hidden': 'true' }, '🏠'), ' Base'),
+      ]
+    : cleared
     ? [
         h('button', { class: 'btn btn-primary btn-big', onclick: opts.onNext }, h('span', { 'aria-hidden': 'true' }, '🚀'), ' Next'),
         h('button', { class: 'btn btn-secondary', onclick: opts.onHangar }, h('span', { 'aria-hidden': 'true' }, '🛠️'), ' Hangar'),
@@ -83,7 +101,7 @@ export function resultsScreen(opts: {
 
   const el = h(
     'div',
-    { class: `center-stack results ${cleared ? 'is-cleared' : 'is-failed'}${summary.promoted ? ' is-promoted' : ''}` },
+    { class: `center-stack results ${cleared ? 'is-cleared' : 'is-failed'}${promoted ? ' is-promoted' : ''}${practice ? ' is-practice' : ''}` },
     h(
       'div',
       { class: 'panel results-panel' },
@@ -91,11 +109,12 @@ export function resultsScreen(opts: {
       h('h2', { class: 'results-title' }, cleared ? pick(CLEAR_CHEERS) : h('span', null, h('span', { 'aria-hidden': 'true' }, '🔧 '), 'Good try!')),
       !cleared ? h('p', { class: 'encourage' }, FAIL_CHEERS[0]!) : null,
       starRow,
+      streakChip,
       stats,
       earnedRow,
       h('div', { class: 'btn-row results-actions' }, buttons),
     ),
-    summary.promoted ? h('div', { class: 'confetti', 'aria-hidden': 'true' }, Array.from({ length: 36 }, (_, i) => h('i', { style: `--i:${i}` }))) : null,
+    promoted ? h('div', { class: 'confetti', 'aria-hidden': 'true' }, Array.from({ length: 36 }, (_, i) => h('i', { style: `--i:${i}` }))) : null,
   );
 
   // The first fail message is the canonical one; vary later ones for repeat fails.
@@ -109,7 +128,7 @@ export function resultsScreen(opts: {
     el,
     onEnter() {
       // The game already played levelClear/levelFail at the moment it happened.
-      if (summary.promoted) timers.push(setTimeout(() => opts.audio.play('promote'), 400));
+      if (promoted) timers.push(setTimeout(() => opts.audio.play('promote'), 400));
       // Stars pop in one by one.
       el.querySelectorAll<HTMLElement>('.star').forEach((s, i) => {
         timers.push(setTimeout(() => s.classList.add('show'), 400 + i * 280));

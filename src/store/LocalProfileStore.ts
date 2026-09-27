@@ -1,5 +1,6 @@
 import type { Profile } from '../types';
 import { CATALOG } from '../catalog';
+import { isSkillId } from '../learning/skills';
 import { buildNewProfile, defaultSettings, freeItemIds, type ProfileStore } from './ProfileStore';
 
 export const STORAGE_KEY = 'mathteroid:v1';
@@ -35,7 +36,7 @@ export function migrate(raw: unknown): StoredData {
 }
 
 /** Fill in fields that may be missing from older / hand-edited saves. */
-function repairProfile(p: Profile): Profile {
+export function repairProfile(p: Profile): Profile {
   // The equipped body is always owned (covers the chosen starter ship).
   const owned = new Set([...(Array.isArray(p.owned) ? p.owned : []), ...freeItemIds(), ...(p.loadout?.body ? [p.loadout.body] : [])]);
   const known = new Set(CATALOG.map((i) => i.id));
@@ -46,6 +47,8 @@ function repairProfile(p: Profile): Profile {
     owned: [...owned].filter((id) => known.has(id)),
     settings: { ...defaultSettings(), ...(p.settings ?? {}) },
     loadout: { ...p.loadout, perks: Array.isArray(p.loadout?.perks) ? p.loadout.perks : [] },
+    // Keep only known skill ids, once each.
+    practiceSkills: Array.isArray(p.practiceSkills) ? [...new Set(p.practiceSkills.filter(isSkillId))] : [],
   };
 }
 

@@ -26,7 +26,7 @@ describe('LocalProfileStore', () => {
     expect(p.owned).not.toContain('arrow');
     expect(p.owned).not.toContain('stingray');
     expect(p.owned).not.toContain('gold');
-    expect(p.settings).toEqual({ musicVolume: 0.5, sfxVolume: 0.8, readAloud: false, controlMode: 'direct' });
+    expect(p.settings).toEqual({ musicVolume: 0.5, sfxVolume: 0.8, readAloud: false, controlMode: 'direct', touchMode: 'tapdrag' });
 
     const raw = JSON.parse(storage.getItem(STORAGE_KEY)!);
     expect(raw.version).toBe(1);
@@ -91,5 +91,16 @@ describe('LocalProfileStore', () => {
     expect(p.owned).not.toContain('bogus');
     expect(p.owned).toContain('cyan');
     expect(p.loadout.perks).toEqual([]);
+    expect(p.practiceSkills).toEqual([]);
+  });
+
+  it('keeps valid remembered practice skills and drops junk', async () => {
+    const storage = new MemoryStorage();
+    const store = new LocalProfileStore(storage);
+    const p = await store.create('Pia', '🦉', 'arrow');
+    p.practiceSkills = ['mul:7', 'mul:7', 'div:13', 'nope', 'sub:8'];
+    await store.save(p);
+    const again = (await new LocalProfileStore(storage).get(p.id))!;
+    expect(again.practiceSkills).toEqual(['mul:7', 'sub:8']);
   });
 });

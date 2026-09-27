@@ -18,31 +18,14 @@ import type {
 } from '../types';
 import { allFacts, factById, makeFact } from './facts';
 import { STAGES } from './curriculum';
+import { MASTERY, factMastered, factWeight, median } from './mastery';
+import { factsForSkills, skillLabel } from './skills';
+
+export { MASTERY, factMastered, factWeight };
 
 // ---------------------------------------------------------------------------
 // Tunables
 // ---------------------------------------------------------------------------
-
-/**
- * Mastery gate. Response times include flying and aiming at the asteroid,
- * so these are looser than flashcard thresholds.
- */
-export const MASTERY = {
-  /** Pooled accuracy over the recent windows of the stage's facts. */
-  accuracy: 0.9,
-  /** A correct answer faster than this counts as "fast". */
-  fastMs: 4000,
-  /** Share of recent correct answers that must be fast. */
-  fastShare: 0.75,
-  /** A fact counts as "covered" once attempted this many times. */
-  minAttemptsPerFact: 2,
-  /** Fraction of the stage's facts that must be covered... */
-  coverage: 0.8,
-  /** ...capped at this many facts, so big review stages stay reachable. */
-  maxCoverageFacts: 40,
-  /** Minimum levels played in the stage (promotion also requires clearing the current one). */
-  minLevels: 2,
-};
 
 /** Level difficulty ramp within a stage. World is ~100 units wide. */
 /**
@@ -62,6 +45,19 @@ export const DIFFICULTY = {
   easeFactor: 0.7,
   /** Consecutive failures that trigger an eased level. */
   easeAfterFailures: 2,
+};
+
+/**
+ * Practice sessions (pick-a-skill). Each session starts at DIFFICULTY's start
+ * values and ramps a little per consecutive clear, reaching the mission end
+ * values after `rampClears` clears in a row.
+ */
+export const PRACTICE = {
+  rampClears: 6,
+  /** stageId of every practice level. */
+  stageId: 'practice',
+  /** Skill labels shown in the level name before it is shortened ("+2"). */
+  maxLabelsInName: 4,
 };
 
 /** Length cap of FactStat.recent / recentMs. */
@@ -92,48 +88,7 @@ function cloneState(s: LearningState): LearningState {
   };
 }
 
-function median(xs: number[]): number | null {
-  if (xs.length === 0) return null;
-  const s = [...xs].sort((a, b) => a - b);
-  const mid = s.length >> 1;
-  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
-}
-
 const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
-
-/** True when the kid reliably knows a fact: recent accuracy high and mostly quick. */
-function isKnown(st: FactStat | undefined): boolean {
-  if (!st || st.recent.length < 2) return false;
-  const acc = st.recent.filter(Boolean).length / st.recent.length;
-  const med = median(st.recentMs);
-  return acc >= 0.8 && med !== null && med <= MASTERY.fastMs * 1.25;
-}
-
-/**
- * Practice weight of a fact: higher = more likely to be asked.
- * Normal levels favour unseen, recently missed and slow facts.
- * Eased levels flip the bias toward facts the kid already knows.
- */
-export function factWeight(st: FactStat | undefined, eased = false): number {
-  if (eased) {
-    if (!st) return 0.5;
-    return isKnown(st) ? 4 : 1;
-  }
-  if (!st || st.attempts === 0) return 3;
-  let w = 1;
-  if (st.recent.length > 0) {
-    const misses = st.recent.filter((r) => !r).length;
-    w += 4 * (misses / st.recent.length);
-    if (!st.recent[st.recent.length - 1]) w += 2; // just missed it
-  }
-  const med = median(st.recentMs);
-  if (med !== null && med > MASTERY.fastMs) {
-    w += Math.min(2, (2 * (med - MASTERY.fastMs)) / MASTERY.fastMs);
-  }
-  if (st.attempts < MASTERY.minAttemptsPerFact) w += 1;
-  if (isKnown(st)) w *= 0.6; // still reviewed, just less often
-  return w;
-}
 
 /** Weighted random choice; returns -1 for an empty / all-zero list. */
 function weightedIndex(weights: number[], rng: () => number): number {
@@ -275,7 +230,7 @@ class AdaptiveQuestionProvider implements QuestionProvider {
     for (const v of liveValues) liveCount.set(v, (liveCount.get(v) ?? 0) + 1);
 
     const candidates = this.answers.filter((v) => v !== ans);
-    if (candidates.length === 0) return ans + 1; // degenerate stage; never equal the answer
+    if (candidates.length === 0) return fallbackDistractor(ans, neighbors, this.stage.op, this.rng);
 
     const weights = candidates.map((v) => {
       const d = Math.abs(v - ans);
@@ -293,6 +248,21 @@ class AdaptiveQuestionProvider implements QuestionProvider {
     for (const v of candidates) if (Math.abs(v - ans) < Math.abs(best - ans)) best = v;
     return best;
   }
+}
+
+/**
+ * Distractor for a fact set whose facts all share one answer (tiny practice
+ * sets): a neighbouring-fact answer or ±1/±2, kept >= 1 so it is the answer of
+ * some real fact of the preferred operation when possible. Never equals `ans`.
+ */
+function fallbackDistractor(ans: number, neighbors: Set<number>, op: Operation | 'mixed', rng: () => number): number {
+  const ok = (v: number) => Number.isInteger(v) && v >= 1 && v !== ans;
+  const pool = [...neighbors].filter(ok);
+  const inOp = pool.filter((v) => allFacts().some((f) => f.answer === v && (op === 'mixed' || f.op === op)));
+  const from = inOp.length > 0 ? inOp : pool;
+  if (from.length > 0) return from[Math.floor(rng() * from.length)];
+  for (const v of [ans + 1, ans - 1, ans + 2, ans - 2]) if (ok(v)) return v;
+  return ans + 1;
 }
 
 /**
@@ -382,6 +352,36 @@ export function progressFromReport(r: MasteryReport): number {
 // Engine
 // ---------------------------------------------------------------------------
 
+/** Interpolate DIFFICULTY's start→end values; t in 0..1. */
+function paceAt(t: number, eased: boolean): { count: number; speed: number } {
+  let count = DIFFICULTY.startAsteroids + (DIFFICULTY.endAsteroids - DIFFICULTY.startAsteroids) * t;
+  let speed = DIFFICULTY.startSpeed + (DIFFICULTY.endSpeed - DIFFICULTY.startSpeed) * t;
+  if (eased) {
+    count *= DIFFICULTY.easeFactor;
+    speed *= DIFFICULTY.easeFactor;
+  }
+  return { count: Math.max(2, Math.round(count)), speed: Math.round(speed * 10) / 10 };
+}
+
+/**
+ * Kid-facing name of a practice level: "Practice: ×6 ×7 ×8", shortened to
+ * "Practice: ×1 ×2 ×3 ×4 +5" when many skills are picked.
+ */
+export function practiceName(skillIds: readonly string[]): string {
+  if (skillIds.length === 0) return 'Practice';
+  const labels = skillIds.map(skillLabel);
+  const shown = labels.slice(0, PRACTICE.maxLabelsInName).join(' ');
+  const more = labels.length - PRACTICE.maxLabelsInName;
+  return `Practice: ${shown}${more > 0 ? ` +${more}` : ''}`;
+}
+
+export interface PracticeLevelOptions {
+  /** Kid-facing level number: the session's level count (default streak + 1). */
+  levelNumber?: number;
+  /** Override the level name (e.g. "Needs practice"). */
+  name?: string;
+}
+
 export class LearningEngine {
   private state: LearningState;
 
@@ -415,33 +415,66 @@ export class LearningEngine {
     return progressFromReport(evaluateMastery(this.currentStage(), this.state));
   }
 
+  /** The same adaptive provider for Missions and Practice. */
+  private provider(stage: StageDef, eased: boolean): QuestionProvider {
+    return new AdaptiveQuestionProvider(stage, this.state.factStats, eased, this.rng);
+  }
+
   buildLevel(): LevelConfig {
     const stage = this.currentStage();
     const eased = this.state.consecutiveFailures >= DIFFICULTY.easeAfterFailures;
-    const t = clamp01(this.state.levelInStage / DIFFICULTY.rampLevels);
-    let count = DIFFICULTY.startAsteroids + (DIFFICULTY.endAsteroids - DIFFICULTY.startAsteroids) * t;
-    let speed = DIFFICULTY.startSpeed + (DIFFICULTY.endSpeed - DIFFICULTY.startSpeed) * t;
-    if (eased) {
-      count *= DIFFICULTY.easeFactor;
-      speed *= DIFFICULTY.easeFactor;
-    }
+    const pace = paceAt(clamp01(this.state.levelInStage / DIFFICULTY.rampLevels), eased);
     return {
       stageId: stage.id,
       stageName: stage.name,
       levelNumber: this.state.levelsCleared + 1,
       mode: 'classic',
-      initialAsteroids: Math.max(2, Math.round(count)),
-      asteroidSpeed: Math.round(speed * 10) / 10,
+      initialAsteroids: pace.count,
+      asteroidSpeed: pace.speed,
       maxAsteroids: eased ? DIFFICULTY.easedMaxAsteroids : DIFFICULTY.maxAsteroids,
       eased,
-      questions: new AdaptiveQuestionProvider(stage, this.state.factStats, eased, this.rng),
+      questions: this.provider(stage, eased),
     };
   }
 
-  recordLevel(result: LevelResult): LevelSummary {
+  /**
+   * A practice level over an arbitrary fact set: skill ids ("mul:7") or facts.
+   * Pace starts at DIFFICULTY's start values and ramps with `streak` (consecutive
+   * clears this session), reaching the mission end values after PRACTICE.rampClears.
+   * Questions use the same adaptive weighting as missions.
+   */
+  buildPracticeLevel(selection: readonly string[] | readonly Fact[], streak: number, opts: PracticeLevelOptions = {}): LevelConfig {
+    const isIds = selection.every((x) => typeof x === 'string');
+    const ids = isIds ? (selection as readonly string[]) : [];
+    const facts = isIds ? factsForSkills(ids) : dedupeFacts(selection as readonly Fact[]);
+    if (facts.length === 0) throw new Error('Practice needs at least one fact');
+    const ops = new Set(facts.map((f) => f.op));
+    const name = opts.name ?? (isIds ? practiceName(ids) : 'Practice');
+    const stage: StageDef = {
+      id: PRACTICE.stageId,
+      name,
+      op: ops.size === 1 ? facts[0].op : 'mixed',
+      facts,
+    };
+    const s = Math.max(0, Math.floor(Number(streak) || 0));
+    const pace = paceAt(clamp01(s / PRACTICE.rampClears), false);
+    return {
+      stageId: stage.id,
+      stageName: name,
+      levelNumber: Math.max(1, Math.floor(opts.levelNumber ?? s + 1)),
+      mode: 'classic',
+      initialAsteroids: pace.count,
+      asteroidSpeed: pace.speed,
+      maxAsteroids: DIFFICULTY.maxAsteroids,
+      eased: false,
+      questions: this.provider(stage, false),
+    };
+  }
+
+  /** Fold a level's answers into the per-fact stats (shared by missions and practice). */
+  private recordAnswers(result: LevelResult): { accuracy: number; medianCorrectMs: number | null } {
     const s = this.state;
     const ts = this.now();
-
     for (const e of result.answers) {
       const st = s.factStats[e.factId] ?? { attempts: 0, correct: 0, recentMs: [], recent: [], lastSeen: 0 };
       st.attempts++;
@@ -455,6 +488,15 @@ export class LearningEngine {
       st.lastSeen = ts;
       s.factStats[e.factId] = st;
     }
+    const nCorrect = result.answers.filter((a) => a.correct).length;
+    const accuracy = result.answers.length > 0 ? nCorrect / result.answers.length : 0;
+    const medianCorrectMs = median(result.answers.filter((a) => a.correct).map((a) => a.responseMs));
+    return { accuracy, medianCorrectMs };
+  }
+
+  recordLevel(result: LevelResult): LevelSummary {
+    const s = this.state;
+    const { accuracy, medianCorrectMs } = this.recordAnswers(result);
 
     const cleared = result.outcome === 'cleared';
     s.levelInStage++;
@@ -465,10 +507,6 @@ export class LearningEngine {
     } else {
       s.consecutiveFailures++;
     }
-
-    const nCorrect = result.answers.filter((a) => a.correct).length;
-    const accuracy = result.answers.length > 0 ? nCorrect / result.answers.length : 0;
-    const medianCorrectMs = median(result.answers.filter((a) => a.correct).map((a) => a.responseMs));
 
     const report = evaluateMastery(this.currentStage(), s);
     const canAdvance = s.stageIndex < STAGES.length - 1;
@@ -488,4 +526,19 @@ export class LearningEngine {
 
     return { accuracy, medianCorrectMs, promoted: false, stageProgress: progressFromReport(report) };
   }
+
+  /**
+   * Record a practice level: per-fact stats update exactly as in missions, but
+   * mission progression (stage, level counters, failures) is untouched and
+   * practice never promotes. stageProgress is the current mission stage's.
+   */
+  recordPractice(result: LevelResult): LevelSummary {
+    const { accuracy, medianCorrectMs } = this.recordAnswers(result);
+    return { accuracy, medianCorrectMs, promoted: false, stageProgress: this.stageProgress() };
+  }
+}
+
+function dedupeFacts(facts: readonly Fact[]): Fact[] {
+  const seen = new Set<string>();
+  return facts.filter((f) => (seen.has(f.id) ? false : (seen.add(f.id), true)));
 }
