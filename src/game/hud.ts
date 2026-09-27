@@ -128,6 +128,14 @@ export class Hud {
     return this.hintParts.has(p);
   }
 
+  /** Screen rects (client px) of the hint parts still showing, so number labels can avoid them. */
+  hintRects(): DOMRect[] {
+    if (!this.hintEl.classList.contains('mt-hint--on')) return [];
+    const bar = this.hintEl.querySelector('.mt-hint-bar');
+    if (bar) return [bar.getBoundingClientRect()];
+    return [...this.hintParts.values()].map((el) => el.getBoundingClientRect());
+  }
+
   /** Fade the whole hint out. */
   hideHint(): void {
     this.hintParts.clear();

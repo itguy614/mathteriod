@@ -105,6 +105,14 @@ export const ASTEROID = {
   /** Keep labels this many CSS px inside the screen edges (top leaves room for the HUD). */
   labelEdgePx: 6,
   labelTopPx: 96,
+  /** Rocks gently keep apart (after flying in) so their numbers never merge. */
+  separation: {
+    gap: 1.2, // extra world units kept between rock edges
+    restitution: 0.5, // how much of the closing speed bounces back (0 = just stop)
+    push: 2.5, // residual overlap is resolved at this fraction per second
+  },
+  /** Gap kept between two labels, and between a label and a touch control / hint pill (CSS px). */
+  labelGapPx: 4,
 } as const;
 
 /** Level start: the field is empty, then the rocks fly in from off-screen. */

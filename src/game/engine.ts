@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { AudioBus, GameCallbacks, GameEngine, LevelConfig, LevelOptions, ShipLoadout } from '../types';
-import { AsteroidField } from './asteroids';
+import { AsteroidField, type Rect } from './asteroids';
 import { Background } from './background';
 import { ASTEROID, ATTRACT_ASTEROIDS, TAP_TARGET, TOUCH, type AsteroidSize } from './constants';
 import { Effects } from './effects';
@@ -274,6 +274,27 @@ export class Engine implements GameEngine {
     };
   }
 
+  /** Keep number labels out of the touch controls and the hint pill; dim FIRE over a rock. */
+  private updateLabelBlockers(): void {
+    const { input, hud, field } = this.ctx;
+    const c = input.controlRects();
+    const rects: Rect[] = [];
+    const add = (r: DOMRect | null): Rect | null => {
+      if (!r || r.width === 0 || r.height === 0) return null;
+      const a = this.clientToWorld(r.left, r.bottom);
+      const b = this.clientToWorld(r.right, r.top);
+      if (!a || !b) return null;
+      const w = { x0: a.x, y0: a.y, x1: b.x, y1: b.y };
+      rects.push(w);
+      return w;
+    };
+    const fire = add(c.fire);
+    add(c.stick);
+    for (const r of hud.hintRects()) add(r);
+    field.setBlockers(rects);
+    input.setFireDim(!!fire && field.rockUnder(fire));
+  }
+
   private onTap(clientX: number, clientY: number): void {
     if (this.mode !== 'level' || this.paused || !this.level) return;
     const w = this.clientToWorld(clientX, clientY);
@@ -305,6 +326,7 @@ export class Engine implements GameEngine {
     }
     this.ctx.input.setEnabled(false);
     this.ctx.input.setPaused(false);
+    this.ctx.field.setBlockers([]);
     this.ctx.hud.show(false);
     this.paused = false;
     this.userPaused = false;
@@ -362,6 +384,7 @@ export class Engine implements GameEngine {
         case 'level': {
           const lvl = this.level;
           if (lvl) {
+            this.updateLabelBlockers();
             const result = lvl.update(simDt, t);
             this.setThrust(lvl.thrusting);
             this.focus.copy(lvl.ship.pos);

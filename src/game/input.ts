@@ -202,6 +202,20 @@ export class Input {
     return this.touchMode;
   }
 
+  /** Visible on-screen controls (FIRE, and the stick in joystick mode) in client px. */
+  controlRects(): { fire: DOMRect | null; stick: DOMRect | null } {
+    if (!this.root.classList.contains('mt-touch--on')) return { fire: null, stick: null };
+    return {
+      fire: this.fireBtn.getBoundingClientRect(),
+      stick: this.touchMode === 'joystick' ? this.base.getBoundingClientRect() : null,
+    };
+  }
+
+  /** Make FIRE see-through while a rock sits under it. */
+  setFireDim(on: boolean): void {
+    this.fireBtn.classList.toggle('mt-fire--dim', on);
+  }
+
   get isTouch(): boolean {
     return this.touchCapable;
   }
@@ -400,7 +414,7 @@ export class Input {
     this.ptrs.clear();
     this.endFly();
     this.endStick();
-    this.fireBtn.classList.remove('mt-fire--down');
+    this.fireBtn.classList.remove('mt-fire--down', 'mt-fire--dim');
   }
 
   /** Returns true once per new fire press (tap). */

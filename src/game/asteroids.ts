@@ -282,6 +282,23 @@ export class Asteroid {
   }
 }
 
+/** Axis-aligned rect in world units. */
+export interface Rect {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
+function wrapDelta(d: number, period: number): number {
+  return d - period * Math.round(d / period);
+}
+
+function clampSpeed(a: Asteroid): void {
+  const sp = a.vel.length();
+  if (sp > ASTEROID.maxSpeed) a.vel.multiplyScalar(ASTEROID.maxSpeed / sp);
+}
+
 function clampRange(v: number, lo: number, hi: number): number {
   if (lo > hi) return (lo + hi) / 2;
   return v < lo ? lo : v > hi ? hi : v;
@@ -324,7 +341,7 @@ export class AsteroidField {
     this.gfx.scene.add(a.group);
     this.list.push(a);
     a.update(0, this.gfx.halfW, this.gfx.halfH);
-    this.placeLabel(a);
+    this.layoutLabels();
     return a;
   }
 
@@ -354,13 +371,8 @@ export class AsteroidField {
     if (Math.abs(y) + r > halfH && Math.abs(dy) > 1e-3) need = Math.max(need, (Math.abs(y) + r - halfH) / Math.abs(dy));
     a.startEntry(dirAngle, cruise, need, duration, delay);
     a.update(0, halfW, halfH);
-    this.placeLabel(a);
+    this.layoutLabels();
     return a;
-  }
-
-  private placeLabel(a: Asteroid): void {
-    const px = this.gfx.pxPerUnit || 1;
-    a.placeLabel(this.gfx.halfW, this.gfx.halfH, ASTEROID.labelEdgePx / px, ASTEROID.labelTopPx / px);
   }
 
   setValue(a: Asteroid, value: number | null): void {
@@ -384,7 +396,7 @@ export class AsteroidField {
     }
     a.labelAspect = aspect;
     this.sizeLabel(a);
-    this.placeLabel(a);
+    this.layoutLabels();
   }
 
   private sizeLabel(a: Asteroid): void {
@@ -394,10 +406,8 @@ export class AsteroidField {
   }
 
   private refreshLabelSizes(): void {
-    for (const a of this.list) {
-      this.sizeLabel(a);
-      this.placeLabel(a);
-    }
+    for (const a of this.list) this.sizeLabel(a);
+    this.layoutLabels();
   }
 
   remove(a: Asteroid): void {
@@ -413,11 +423,162 @@ export class AsteroidField {
     return out;
   }
 
+  /** Screen areas labels must stay out of (touch controls, hint pill), in world units. */
+  private blockers: Rect[] = [];
+
+  setBlockers(rects: Rect[]): void {
+    this.blockers = rects;
+  }
+
   update(dt: number): void {
-    for (const a of this.list) {
-      a.update(dt, this.gfx.halfW, this.gfx.halfH);
-      this.placeLabel(a);
+    for (const a of this.list) a.update(dt, this.gfx.halfW, this.gfx.halfH);
+    if (dt > 0) this.separate(dt);
+    this.layoutLabels();
+  }
+
+  /**
+   * Soft rock-to-rock separation (only rocks that have finished flying in): an
+   * inelastic bounce of the closing speed plus a gentle positional push for any
+   * leftover overlap. Wrap-aware, and speeds stay under ASTEROID.maxSpeed.
+   */
+  private separate(dt: number): void {
+    const { halfW, halfH } = this.gfx;
+    const S = ASTEROID.separation;
+    const rocks = this.list.filter((a) => a.active);
+    for (let i = 0; i < rocks.length; i++) {
+      const a = rocks[i];
+      for (let j = i + 1; j < rocks.length; j++) {
+        const b = rocks[j];
+        let dx = wrapDelta(b.pos.x - a.pos.x, 2 * halfW);
+        let dy = wrapDelta(b.pos.y - a.pos.y, 2 * halfH);
+        const want = a.radius + b.radius + S.gap;
+        const d2 = dx * dx + dy * dy;
+        if (d2 >= want * want) continue;
+        let d = Math.sqrt(d2);
+        if (d < 1e-4) {
+          const r = Math.random() * Math.PI * 2;
+          dx = Math.cos(r);
+          dy = Math.sin(r);
+          d = 1;
+        } else {
+          dx /= d;
+          dy /= d;
+        }
+        const ma = a.radius * a.radius;
+        const mb = b.radius * b.radius;
+        const wa = mb / (ma + mb); // share of the correction the lighter rock takes
+        const wb = ma / (ma + mb);
+        // closing speed along the normal → bounce (softly)
+        const vn = (b.vel.x - a.vel.x) * dx + (b.vel.y - a.vel.y) * dy;
+        if (vn < 0) {
+          const j2 = -(1 + S.restitution) * vn;
+          a.vel.x -= dx * j2 * wa;
+          a.vel.y -= dy * j2 * wa;
+          b.vel.x += dx * j2 * wb;
+          b.vel.y += dy * j2 * wb;
+        }
+        // leftover overlap: ease apart
+        const push = (want - d) * Math.min(1, S.push * dt);
+        a.pos.x -= dx * push * wa;
+        a.pos.y -= dy * push * wa;
+        b.pos.x += dx * push * wb;
+        b.pos.y += dy * push * wb;
+        clampSpeed(a);
+        clampSpeed(b);
+      }
     }
+  }
+
+  /**
+   * Place every number label: on its rock, clamped inside the screen, then pushed
+   * out of touch controls / the hint pill, then apart from each other vertically
+   * so two numbers never overlap (e.g. right after a split).
+   */
+  private layoutLabels(): void {
+    const { halfW, halfH } = this.gfx;
+    const px = this.gfx.pxPerUnit || 1;
+    const edge = ASTEROID.labelEdgePx / px;
+    const top = ASTEROID.labelTopPx / px;
+    const gap = ASTEROID.labelGapPx / px;
+    const vis: Array<{ a: Asteroid; x: number; y: number; hw: number; hh: number }> = [];
+    for (const a of this.list) {
+      a.placeLabel(halfW, halfH, edge, top);
+      if (a.label?.visible) {
+        vis.push({ a, x: a.label.position.x, y: a.label.position.y, hw: a.label.scale.x / 2, hh: a.label.scale.y / 2 });
+      }
+    }
+    if (vis.length === 0) return;
+    const minX = -halfW + edge;
+    const maxX = halfW - edge;
+    const minY = -halfH + edge;
+    const maxY = halfH - top;
+    const clampL = (l: (typeof vis)[number]) => {
+      l.x = clampRange(l.x, minX + l.hw, maxX - l.hw);
+      l.y = clampRange(l.y, minY + l.hh, maxY - l.hh);
+    };
+    for (let iter = 0; iter < 4; iter++) {
+      let moved = false;
+      // out of the controls: take the smallest escape that stays on screen
+      for (const l of vis) {
+        for (const r of this.blockers) {
+          const ox = Math.min(l.x + l.hw, r.x1 + gap) - Math.max(l.x - l.hw, r.x0 - gap);
+          const oy = Math.min(l.y + l.hh, r.y1 + gap) - Math.max(l.y - l.hh, r.y0 - gap);
+          if (ox <= 0 || oy <= 0) continue;
+          const opts = [
+            { x: l.x, y: r.y1 + gap + l.hh }, // above
+            { x: l.x, y: r.y0 - gap - l.hh }, // below
+            { x: r.x0 - gap - l.hw, y: l.y }, // left
+            { x: r.x1 + gap + l.hw, y: l.y }, // right
+          ].filter((o) => o.x - l.hw >= minX - 1e-3 && o.x + l.hw <= maxX + 1e-3 && o.y - l.hh >= minY - 1e-3 && o.y + l.hh <= maxY + 1e-3);
+          if (opts.length === 0) continue;
+          opts.sort((p, q) => Math.hypot(p.x - l.x, p.y - l.y) - Math.hypot(q.x - l.x, q.y - l.y));
+          l.x = opts[0].x;
+          l.y = opts[0].y;
+          moved = true;
+        }
+      }
+      // apart from each other (vertically)
+      for (let i = 0; i < vis.length; i++) {
+        for (let j = i + 1; j < vis.length; j++) {
+          const p = vis[i];
+          const q = vis[j];
+          const ox = Math.min(p.x + p.hw, q.x + q.hw) - Math.max(p.x - p.hw, q.x - q.hw);
+          const oy = Math.min(p.y + p.hh, q.y + q.hh) + gap - Math.max(p.y - p.hh, q.y - q.hh);
+          if (ox <= 0 || oy <= 0) continue;
+          const [hi, lo] = p.y >= q.y ? [p, q] : [q, p];
+          hi.y += oy / 2;
+          lo.y -= oy / 2;
+          // at a screen edge, the other one takes the whole move
+          if (hi.y + hi.hh > maxY) {
+            lo.y -= hi.y + hi.hh - maxY;
+            hi.y = maxY - hi.hh;
+          }
+          if (lo.y - lo.hh < minY) {
+            hi.y += minY - (lo.y - lo.hh);
+            lo.y = minY + lo.hh;
+          }
+          moved = true;
+        }
+      }
+      for (const l of vis) clampL(l);
+      if (!moved) break;
+    }
+    for (const l of vis) l.a.label!.position.set(l.x, l.y, 5);
+  }
+
+  /** Does any rock (or its wrapped copy) overlap this world rect? */
+  rockUnder(r: Rect): boolean {
+    const imgs: THREE.Vector2[] = [];
+    for (const a of this.list) {
+      if (!a.group.visible || a.value === null) continue;
+      const n = a.images(imgs);
+      for (let i = 0; i < n; i++) {
+        const cx = clampRange(imgs[i].x, r.x0, r.x1);
+        const cy = clampRange(imgs[i].y, r.y0, r.y1);
+        if (Math.hypot(imgs[i].x - cx, imgs[i].y - cy) < a.radius * 0.85) return true;
+      }
+    }
+    return false;
   }
 
   /** Any rock still flying in (or waiting to)? */

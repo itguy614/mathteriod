@@ -444,6 +444,7 @@
   -webkit-user-select: none;
   user-select: none;
 }
+.mt-fire--dim { opacity: 0.55; }
 .mt-fire--down { transform: scale(0.92); opacity: 1; box-shadow: 0 0 36px rgba(255, 59, 212, 0.95); }
 
 /* --------------------------------------------------------------- flash */
