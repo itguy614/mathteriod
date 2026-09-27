@@ -4,8 +4,10 @@
   "description": "Asteroids-style arithmetic fact practice game",
   "scripts": {
     "dev": "vite",
+    "dev:lan": "bash scripts/lan.sh dev",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview",
+    "preview": "bash scripts/lan.sh preview",
+    "preview:local": "vite preview",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

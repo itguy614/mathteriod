@@ -10,10 +10,17 @@ See [docs/VISION.md](docs/VISION.md) for the full product vision and roadmap.
 
 ```sh
 npm install
-npm run dev        # http://localhost:5173, also exposed on the LAN for playtesting
+npm run dev        # http://localhost:5173 (hot reload)
+npm run preview    # build, then serve on the LAN for playtesting (port 4173)
+npm run dev:lan    # dev server on the LAN (port 5173)
 npm test           # vitest (learning engine, store, audio)
 npm run build      # typecheck + production bundle in dist/
 ```
+
+`preview` and `dev:lan` use `scripts/lan.sh`: it asks for sudo, opens the port in UFW
+for the local subnet only, prints the URL to give the kids, and removes the UFW rule
+when you press Ctrl-C (or the server exits). `preview:local` serves without touching
+the firewall.
 
 Game engine sandbox (loadout switcher, event log): `http://localhost:5173/src/game/dev.html`
 
