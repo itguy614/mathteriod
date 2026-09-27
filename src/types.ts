@@ -51,8 +51,10 @@ export interface FactStat {
 /** Serializable per-profile learning state (persisted by store/). */
 export interface LearningState {
   stageIndex: number;
-  /** Levels played in the current stage (cleared or failed). */
+  /** Levels played in the current stage (cleared or failed). Drives the difficulty ramp. */
   levelInStage: number;
+  /** Levels cleared in the current stage. Promotion requires MASTERY.minLevels of these. */
+  clearedInStage: number;
   /** Total levels cleared, all time. Used as the kid-facing "Level N". */
   levelsCleared: number;
   consecutiveFailures: number;
@@ -216,6 +218,11 @@ export interface GameCallbacks {
   onQuestion?(q: Question): void;
   onAnswer?(e: AnswerEvent): void;
   onShipHit?(hitsTaken: number, hitsAllowed: number): void;
+  /**
+   * The player asked to pause (P/Escape or the HUD pause button). The game has
+   * already paused itself; main shows the pause menu and later calls resume() or stop().
+   */
+  onPause?(): void;
   onLevelEnd(result: LevelResult): void;
 }
 
@@ -224,9 +231,15 @@ export interface GameEngine {
   startLevel(config: LevelConfig, loadout: ShipLoadout, callbacks: GameCallbacks): void;
   pause(): void;
   resume(): void;
-  /** Abort the current level without calling onLevelEnd. */
+  /** Abort the current level without calling onLevelEnd, and return to attract mode. */
   stop(): void;
-  /** Idle attract/preview mode: render the ship slowly rotating (for the hangar). */
-  showHangar(loadout: ShipLoadout): void;
+  /** Idle background behind menus: starfield with a few drifting asteroids, no HUD. */
+  showAttract(): void;
+  /**
+   * Hangar preview: render the ship large and slowly rotating. `center` is where to
+   * frame the ship in viewport fractions (0..1, default {x:0.5,y:0.5}) so UI panels
+   * don't cover it. Calling again updates loadout/framing live.
+   */
+  showHangar(loadout: ShipLoadout, center?: { x: number; y: number }): void;
   dispose(): void;
 }
