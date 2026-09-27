@@ -29,7 +29,7 @@ export class AudioEngine implements AudioBus {
   private wantMusic = false;
   private unlocked = false;
   private lastPlayed = new Map<SfxName, number>();
-  private settings: Settings = { musicVolume: 0.5, sfxVolume: 0.8, readAloud: false };
+  private settings: Settings = { musicVolume: 0.5, sfxVolume: 0.8, readAloud: false, controlMode: 'direct' };
 
   constructor() {
     this.installUnlock();

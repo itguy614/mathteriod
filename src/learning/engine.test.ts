@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AnswerEvent, FactStat, LearningState, LevelResult } from '../types';
-import { LearningEngine, MASTERY, initialLearningState } from './engine';
+import { DIFFICULTY, LearningEngine, MASTERY, initialLearningState } from './engine';
 import { STAGES } from './curriculum';
 import { factById } from './facts';
 
@@ -70,14 +70,16 @@ describe('LearningEngine basics', () => {
     expect(first.stageId).toBe(STAGES[0].id);
     expect(first.levelNumber).toBe(1);
     expect(first.initialAsteroids).toBe(3);
-    expect(first.asteroidSpeed).toBeLessThanOrEqual(5);
-    expect(first.maxAsteroids).toBe(14);
+    expect(first.asteroidSpeed).toBe(DIFFICULTY.startSpeed);
+    expect(first.maxAsteroids).toBe(DIFFICULTY.maxAsteroids);
     expect(first.eased).toBe(false);
 
     const later = new LearningEngine(stateAt(0, { levelInStage: 20, levelsCleared: 20 })).buildLevel();
-    expect(later.initialAsteroids).toBe(7);
+    expect(later.initialAsteroids).toBe(DIFFICULTY.endAsteroids);
     expect(later.asteroidSpeed).toBeGreaterThan(first.asteroidSpeed);
-    expect(later.asteroidSpeed).toBeLessThanOrEqual(12);
+    // Playtesting: the ramp must stay kid-friendly even deep into a stage.
+    expect(later.asteroidSpeed).toBeLessThanOrEqual(5);
+    expect(later.initialAsteroids).toBeLessThanOrEqual(5);
     expect(later.levelNumber).toBe(21);
   });
 

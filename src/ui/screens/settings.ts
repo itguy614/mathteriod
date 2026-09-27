@@ -1,4 +1,4 @@
-import type { Profile, Settings } from '../../types';
+import type { ControlMode, Profile, Settings } from '../../types';
 import { h } from '../dom';
 import type { Router, Screen } from '../router';
 
@@ -59,6 +59,33 @@ export function settingsScreen(opts: {
     if (settings.readAloud) opts.onTestSpeech();
   });
 
+  // Steering: 'direct' (arrows move the ship) vs classic Asteroids 'rotate'.
+  const modes: Array<{ mode: ControlMode; label: string; tip: string }> = [
+    { mode: 'direct', label: '🕹️ Easy', tip: 'Arrows move the ship' },
+    { mode: 'rotate', label: '🔄 Classic', tip: 'Turn and thrust' },
+  ];
+  const steerTip = h('p', { class: 'hint' });
+  const segButtons = modes.map((m) =>
+    h('button', {
+      class: 'seg-btn',
+      role: 'radio',
+      onclick: () => {
+        setMode(m.mode);
+        opts.onChange({ ...settings });
+      },
+    }, m.label),
+  );
+  function setMode(mode: ControlMode): void {
+    settings.controlMode = mode;
+    segButtons.forEach((b, i) => {
+      const on = modes[i].mode === mode;
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-checked', String(on));
+    });
+    steerTip.textContent = modes.find((m) => m.mode === mode)!.tip;
+  }
+  setMode(settings.controlMode);
+
   const el = h(
     'div',
     { class: 'page settings' },
@@ -87,6 +114,14 @@ export function settingsScreen(opts: {
         ),
       ),
       !opts.speechAvailable ? h('p', { class: 'hint' }, 'Read aloud is not available in this browser.') : null,
+      h(
+        'div',
+        { class: 'setting-row' },
+        h('span', { class: 'setting-icon', 'aria-hidden': 'true' }, '🚀'),
+        h('span', { class: 'setting-label' }, 'Steering'),
+        h('div', { class: 'seg', role: 'radiogroup', 'aria-label': 'Steering' }, ...segButtons),
+      ),
+      steerTip,
       h('hr', { class: 'divider' }),
       h(
         'div',

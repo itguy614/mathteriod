@@ -233,6 +233,10 @@ function startPlay(engine: LearningEngine, config: LevelConfig): void {
     onQuestion: (q: Question) => audio.speak(q.speech),
     onPause: pauseGame,
     onLevelEnd: (result: LevelResult) => void finishLevel(engine, result),
+  }, {
+    controlMode: p.settings.controlMode,
+    // New pilots get the fading controls hint on their first few levels.
+    showControlsHint: p.learning.levelsCleared < 3,
   });
   // The countdown may have finished while the tab was in the background.
   if (document.hidden) pauseGame();

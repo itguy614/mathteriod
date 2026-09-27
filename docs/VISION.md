@@ -50,6 +50,25 @@ Promotion comes only when a child has actually mastered a set of facts.
   for example, **≥90% accuracy with most answers under ~3 seconds** across that stage's facts.
   The thresholds are tunable. Kids progress at their own pace.
 
+## Practice mode (pick a skill)
+
+Next to the main **Mission** path, **Practice** lets a player target specific facts.
+For example, they can drill the ×7 table they're learning at school.
+
+- **Skills are fact families:** ×N (either factor is N), ÷N (divide by N), +N (either addend
+  is N), −N (subtract N), for N = 1–12. Players can multi-select to combine, e.g. ×6 + ×7 + ×8.
+- **Everything is unlocked from day one.** Practice is independent of Mission progress.
+- **Skill map:** each tile shows a mastery meter (not started / learning / fast). A
+  **Needs practice** tile auto-picks the player's weakest facts.
+- **Sessions:** normal clear-the-field levels using only the chosen facts, followed by
+  Play again / Change skills.
+- **Pace:** each session starts at the gentlest pace and ramps a little with each consecutive
+  clear. It resets on a failure or a change of skills.
+- **Stats count, promotion doesn't:** Practice answers update per-fact stats (so the
+  adaptive engine and mastery know about them), but only Missions promote to the next stage.
+- **Rewards:** earns Stardust (slightly less than Missions). Scores don't go on leaderboards,
+  since players choose their own difficulty.
+
 ## Rewards and customization
 
 - Everyone starts at the same level and **chooses a base ship**.
@@ -92,6 +111,8 @@ Promotion comes only when a child has actually mastered a set of facts.
    3-hit failure, Classic mode, addition + subtraction stages with adaptive mastery, base-ship
    choice, a small Stardust shop. Profiles and progress live in browser `localStorage`. Goal:
    prove it's fun for the kids.
+   - **Phase 1.5: Practice mode** (pick-a-skill drilling, skill map with mastery meters),
+     added from playtest feedback.
 2. **Phase 2: Backend and accounts.** Parent login, child profiles with PINs, server-side
    progress and per-fact stats, group leaderboards.
 3. **Phase 3: Full curriculum and modes.** Multiplication and division stages, Swarm and Reverse

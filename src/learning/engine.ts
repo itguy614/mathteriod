@@ -45,15 +45,19 @@ export const MASTERY = {
 };
 
 /** Level difficulty ramp within a stage. World is ~100 units wide. */
+/**
+ * Kept deliberately gentle: playtesting showed faster/more rocks turn the game
+ * into dodging instead of math (level 5 was unplayable at 7 rocks / 11 u/s).
+ */
 export const DIFFICULTY = {
   startAsteroids: 3,
-  endAsteroids: 7,
-  startSpeed: 4,
-  endSpeed: 11,
+  endAsteroids: 5,
+  startSpeed: 2,
+  endSpeed: 5,
   /** Levels played in a stage until the ramp reaches its end values. */
-  rampLevels: 8,
-  maxAsteroids: 14,
-  easedMaxAsteroids: 10,
+  rampLevels: 12,
+  maxAsteroids: 8,
+  easedMaxAsteroids: 6,
   /** Multiplier on count and speed for eased levels. */
   easeFactor: 0.7,
   /** Consecutive failures that trigger an eased level. */

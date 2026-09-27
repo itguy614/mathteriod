@@ -37,7 +37,7 @@ function profile(stardust: number): Profile {
     owned: ['arrow', 'saucer', 'stingray', 'cyan', 'pulse', 'ion'],
     loadout: defaultLoadout('arrow'),
     bestScore: 0,
-    settings: { musicVolume: 0.5, sfxVolume: 0.8, readAloud: false },
+    settings: { musicVolume: 0.5, sfxVolume: 0.8, readAloud: false, controlMode: 'direct' },
   };
 }
 

@@ -1519,3 +1519,32 @@ button {
     font-size: 0.7rem;
   }
 }
+
+/* Segmented choice (Settings → Steering) */
+.seg {
+  display: inline-flex;
+  justify-self: start;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 999px;
+  border: 2px solid rgba(169, 179, 217, 0.4);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.seg-btn {
+  min-height: 46px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-dim);
+  font: 600 1rem var(--font-body);
+  cursor: pointer;
+  transition: background 160ms, color 160ms;
+}
+
+.seg-btn.on {
+  background: var(--cyan);
+  color: var(--bg);
+  box-shadow: var(--glow-cyan);
+}

@@ -190,10 +190,18 @@ export interface AudioBus {
 // Settings & profiles
 // ---------------------------------------------------------------------------
 
+/**
+ * 'rotate': classic Asteroids (Left/Right turn, Up thrusts forward, Down brakes).
+ * 'direct': arrows/WASD move the ship in that screen direction; the ship turns to
+ *           face where it's moving and Space fires the way it faces.
+ */
+export type ControlMode = 'rotate' | 'direct';
+
 export interface Settings {
   musicVolume: number; // 0..1
   sfxVolume: number;   // 0..1
   readAloud: boolean;
+  controlMode: ControlMode;
 }
 
 export interface Profile {
@@ -226,9 +234,15 @@ export interface GameCallbacks {
   onLevelEnd(result: LevelResult): void;
 }
 
+export interface LevelOptions {
+  controlMode: ControlMode;
+  /** Show the fading on-screen controls hint (new pilots' first levels). */
+  showControlsHint: boolean;
+}
+
 export interface GameEngine {
   /** Start a level. Renders into the container passed at construction. */
-  startLevel(config: LevelConfig, loadout: ShipLoadout, callbacks: GameCallbacks): void;
+  startLevel(config: LevelConfig, loadout: ShipLoadout, callbacks: GameCallbacks, options: LevelOptions): void;
   pause(): void;
   resume(): void;
   /** Abort the current level without calling onLevelEnd, and return to attract mode. */

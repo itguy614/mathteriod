@@ -15,7 +15,7 @@ export interface ProfileStore {
 }
 
 export function defaultSettings(): Settings {
-  return { musicVolume: 0.5, sfxVolume: 0.8, readAloud: false };
+  return { musicVolume: 0.5, sfxVolume: 0.8, readAloud: false, controlMode: 'direct' };
 }
 
 /** Every catalog item that costs nothing is owned from the start. */
