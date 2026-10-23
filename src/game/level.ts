@@ -13,7 +13,7 @@ import { HITS_ALLOWED } from '../catalog';
 import type { Asteroid, AsteroidField } from './asteroids';
 import { circlesOverlap, segmentHitsCircle } from './collision';
 import { AimGuide } from './aimGuide';
-import { AIM_ASSIST, ASTEROID, ENTRY, HINT, HULL, LASER, LEVEL, SHIP, TAP_TARGET, type AsteroidSize } from './constants';
+import { AIM_ASSIST, ASTEROID, ENTRY, HINT, HULL, LASER, LEVEL, REVEAL, SHIP, TAP_TARGET, type AsteroidSize } from './constants';
 import type { Effects } from './effects';
 import type { Graphics } from './graphics';
 import type { HintKind, HintPart, Hud, ShieldState } from './hud';
@@ -72,6 +72,10 @@ export class LevelController {
   /** Correct answers in a row; a wrong answer resets it. */
   private streak = 0;
   private wrongGrace = 0;
+  /** Wrong answers on the current question (drives the fact reveal and rock hint). */
+  private questionMisses = 0;
+  /** Time left showing the revealed fact instead of "= ?". */
+  private revealT = 0;
   /** Rock each bolt locked onto when fired (aim assist curves only toward it). */
   private laserTargets = new WeakMap<Laser, Asteroid>();
   private score = 0;
@@ -137,6 +141,7 @@ export class LevelController {
 
     hud.setLevel(config.levelNumber, config.stageName);
     this.updateHull();
+    hud.setStreak(0, HULL.repairStreak);
     hud.setScore(0);
     hud.setMessage(null);
     hud.show(true);
@@ -244,13 +249,16 @@ export class LevelController {
     }
     this.question = q;
     this.qStart = this.simTime;
+    this.questionMisses = 0;
+    this.revealT = 0;
     this.setEquationLabel(q.prompt);
     this.ctx.hud.setQuestion(q.prompt);
     this.safeCall(() => this.callbacks.onQuestion?.(q));
     this.ctx.audio.speak(q.speech);
   }
 
-  private setEquationLabel(prompt: string | null): void {
+  /** `answer` shows the full fact in the teaching color instead of "= ?". */
+  private setEquationLabel(prompt: string | null, answer: number | null = null): void {
     const mat = this.eqLabel.material as THREE.SpriteMaterial;
     if (this.eqTex) {
       this.eqTex.dispose();
@@ -261,12 +269,38 @@ export class LevelController {
       this.eqLabel.visible = false;
       return;
     }
-    const accent = this.ship.color.rainbow ? '#ffffff' : `#${this.ship.color.color.getHexString()}`;
-    const { tex, aspect } = this.ctx.labels.equationTexture(`${prompt} = ?`, accent);
+    const accent = answer !== null ? REVEAL.color : this.ship.color.rainbow ? '#ffffff' : `#${this.ship.color.color.getHexString()}`;
+    const { tex, aspect } = this.ctx.labels.equationTexture(`${prompt} = ${answer ?? '?'}`, accent);
     this.eqTex = tex;
     this.eqAspect = aspect;
     mat.map = tex;
     mat.needsUpdate = true;
+  }
+
+  /**
+   * After a wrong answer: show the full fact (and say it), then go back to
+   * "= ?" so the kid still has to find and shoot the answer. Repeated misses
+   * also make the correct rock pulse.
+   */
+  private revealFact(q: Question): void {
+    this.questionMisses++;
+    this.revealT = REVEAL.factSec;
+    this.setEquationLabel(q.prompt, q.answer);
+    this.ctx.hud.revealAnswer(q.prompt, q.answer);
+    this.ctx.audio.speak(`${q.speech} equals ${q.answer}`);
+  }
+
+  private updateReveal(dt: number): void {
+    const q = this.question;
+    if (this.revealT > 0) {
+      this.revealT -= dt;
+      if (this.revealT <= 0 && q && this.state === 'playing') {
+        this.setEquationLabel(q.prompt);
+        this.ctx.hud.setQuestion(q.prompt);
+      }
+    }
+    const hintOn = q !== null && this.state === 'playing' && this.questionMisses >= REVEAL.hintAfterMisses;
+    for (const a of this.ctx.field.list) a.hint = hintOn && a.value === q!.answer;
   }
 
   private safeCall(fn: () => void): void {
@@ -314,6 +348,7 @@ export class LevelController {
     }
     field.update(dt);
     this.wrongGrace = Math.max(0, this.wrongGrace - dt);
+    this.updateReveal(dt);
     this.updateInvulnerability(dt);
     this.ship.updateVisual(dt, time, particles);
 
@@ -562,6 +597,7 @@ export class LevelController {
       if (responseMs < LEVEL.speedyMs) effects.popSpeedy(bonus, a.pos.x, a.pos.y);
       effects.flash();
       this.streak++;
+      this.ctx.hud.setStreak(this.streak, HULL.repairStreak);
       if (this.streak % HULL.repairStreak === 0 && this.damage > 0) this.repairHull();
       field.remove(a);
       if (field.liveValues().length > 0) this.nextQuestion();
@@ -574,8 +610,11 @@ export class LevelController {
     hud.react('wrong');
     effects.popIcon('cross', a.pos.x, a.pos.y);
     this.streak = 0;
+    hud.setStreak(0, HULL.repairStreak);
+    // a held-fire burst into one rock is one miss (the fact is still showing anyway)
     if (this.wrongGrace <= 0) {
       this.wrongGrace = HULL.wrongGraceSec;
+      this.revealFact(q);
       this.wrongAnswerDamage();
       if (this.state !== 'playing') return;
     }

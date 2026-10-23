@@ -7,6 +7,8 @@ const VARIANTS = 6;
 const RIM_BASE = new THREE.Color(0x8f7bff);
 /** >1 pushes the neon edges past the bloom threshold so rocks read as "neon vector". */
 const RIM_GLOW = 3.2;
+const RIM_HINT = new THREE.Color(0xffd23b);
+const WHITE = new THREE.Color(1, 1, 1);
 
 function noise3(x: number, y: number, z: number, seed: number): number {
   return (
@@ -64,6 +66,9 @@ export class Asteroid {
   /** Visual feedback timers. */
   shakeT = 0;
   flashT = 0;
+  /** Teaching hint: the rim pulses gold while true (the answer, after repeated misses). */
+  hint = false;
+  private hintPhase = 0;
   fadeIn = 0;
   /**
    * Flying in from off-screen: no wrapping, can't be shot, can't hit the ship.
@@ -182,6 +187,7 @@ export class Asteroid {
     this.mesh.quaternion.premultiply(this.tmpQ);
     if (this.shakeT > 0) this.shakeT = Math.max(0, this.shakeT - dt);
     if (this.flashT > 0) this.flashT = Math.max(0, this.flashT - dt);
+    this.hintPhase = this.hint ? this.hintPhase + dt : 0;
     if (this.fadeIn < 1) this.fadeIn = Math.min(1, this.fadeIn + dt * 1.5);
 
     let ox = 0;
@@ -195,7 +201,11 @@ export class Asteroid {
     this.mesh.scale.setScalar(this.radius * (0.3 + 0.7 * easeOut(this.fadeIn)));
     this.group.visible = !(this.entering && this.entryDelay > 0);
     const f = this.flashT > 0 ? this.flashT / 0.35 : 0;
-    this.rimMat.color.copy(RIM_BASE).lerp(new THREE.Color(1, 1, 1), f).multiplyScalar(RIM_GLOW + f * 2.5);
+    this.rimMat.color.copy(RIM_BASE).lerp(WHITE, f).multiplyScalar(RIM_GLOW + f * 2.5);
+    if (this.hint) {
+      const pulse = 0.5 + 0.5 * Math.sin(this.hintPhase * 6);
+      this.rimMat.color.copy(RIM_HINT).multiplyScalar(RIM_GLOW + 1 + pulse * 3);
+    }
     this.rimMat.opacity = this.fadeIn;
     this.updateGhosts(halfW, halfH);
   }

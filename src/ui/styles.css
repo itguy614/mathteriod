@@ -1172,6 +1172,51 @@ button {
   margin-top: -0.12em;
 }
 
+.missed {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  border: 1.5px dashed rgba(255, 210, 59, 0.45);
+  background: rgba(255, 210, 59, 0.06);
+}
+
+.missed-title {
+  margin: 0;
+  font-size: 1.05rem;
+  color: var(--text-dim);
+}
+
+.missed-list {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.missed-fact {
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1.5px solid #ffd23b;
+  color: #ffd23b;
+  font-weight: 800;
+  font-size: 1.2rem;
+  white-space: nowrap;
+}
+
+.missed-more {
+  align-self: center;
+  color: var(--text-dim);
+  font-weight: 600;
+}
+
 .result-stats {
   display: flex;
   gap: 14px;

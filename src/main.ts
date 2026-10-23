@@ -5,7 +5,7 @@
 import type { Fact, LevelConfig, LevelResult, Operation, Profile, Question, Settings } from './types';
 import { AudioEngine, speechSupported } from './audio';
 import { createGame } from './game/index';
-import { LearningEngine, isSkillId, weakestFacts } from './learning/index';
+import { LearningEngine, NEEDS_PRACTICE, isSkillId, weakestFacts } from './learning/index';
 import { LocalProfileStore, resetProfileProgress, stardustForLevel, stardustForPractice } from './store';
 import { Router } from './ui/router';
 import { hangarCenter } from './ui/layout';
@@ -298,6 +298,7 @@ async function finishLevel(engine: LearningEngine, result: LevelResult): Promise
       onRetry: launchLevel,
       onHangar: goHangar,
       onBase: goHome,
+      onPracticeFacts: practiceMissedFacts,
     }),
   );
 }
@@ -330,6 +331,19 @@ function goPractice(): void {
       onBack: goHome,
     }),
   );
+}
+
+/**
+ * "Practice these" on the results screen: drill the facts just missed, topped
+ * up with the player's other weakest facts so a session never has just one or two.
+ */
+function practiceMissedFacts(missed: Fact[]): void {
+  const facts = [...missed];
+  for (const f of weakestFacts(requireProfile().learning)) {
+    if (facts.length >= NEEDS_PRACTICE.minSeen) break;
+    if (!facts.some((m) => m.id === f.id)) facts.push(f);
+  }
+  startPracticeSession({ kind: 'weak', facts });
 }
 
 function startPracticeSession(selection: PracticeSession['selection']): void {
@@ -397,6 +411,7 @@ async function finishPractice(engine: LearningEngine, result: LevelResult): Prom
       onRetry: launchPractice,
       onHangar: goHangar,
       onBase: goHome,
+      onPracticeFacts: practiceMissedFacts,
       practice: { streak: session.streak, onPlayAgain: launchPractice, onChangeSkills: goPractice },
     }),
   );

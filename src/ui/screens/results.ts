@@ -1,4 +1,5 @@
-import type { AudioBus, LevelResult, LevelSummary } from '../../types';
+import type { AudioBus, Fact, LevelResult, LevelSummary } from '../../types';
+import { factById } from '../../learning/index';
 import { starsForAccuracy } from '../../store/economy';
 import { countUp, h } from '../dom';
 import type { Screen } from '../router';
@@ -13,6 +14,20 @@ const FAIL_CHEERS = [
 
 const pick = <T,>(xs: T[]): T => xs[Math.floor(Math.random() * xs.length)]!;
 
+/** Most missed facts listed on the results screen. */
+const MAX_MISSED_SHOWN = 6;
+
+/** Facts answered wrong at least once this level, in the order they were first missed. */
+function missedFacts(result: LevelResult): Fact[] {
+  const out = new Map<string, Fact>();
+  for (const a of result.answers) {
+    if (a.correct || out.has(a.factId)) continue;
+    const f = factById(a.factId);
+    if (f) out.set(f.id, f);
+  }
+  return [...out.values()];
+}
+
 export function resultsScreen(opts: {
   result: LevelResult;
   summary: LevelSummary;
@@ -23,6 +38,8 @@ export function resultsScreen(opts: {
   onRetry(): void;
   onHangar(): void;
   onBase(): void;
+  /** Start a practice session on the facts missed this level. */
+  onPracticeFacts(facts: Fact[]): void;
   /**
    * Practice variant: Play again / Change skills / Base, never a promotion or
    * "new best". `streak` = clears in a row this session (shown from 2).
@@ -65,6 +82,27 @@ export function resultsScreen(opts: {
       opts.newBest && !practice ? h('span', { class: 'new-best' }, 'NEW BEST!') : null,
     ),
   );
+
+  const missed = missedFacts(result);
+  const missedSection = missed.length
+    ? h(
+        'div',
+        { class: 'missed' },
+        h('h3', { class: 'missed-title' }, 'Facts to practice'),
+        h(
+          'ul',
+          { class: 'missed-list' },
+          missed.slice(0, MAX_MISSED_SHOWN).map((f) => h('li', { class: 'missed-fact' }, `${f.text} = ${f.answer}`)),
+          missed.length > MAX_MISSED_SHOWN ? h('li', { class: 'missed-more' }, `+${missed.length - MAX_MISSED_SHOWN} more`) : null,
+        ),
+        h(
+          'button',
+          { class: 'btn btn-practice', onclick: () => opts.onPracticeFacts(missed) },
+          h('span', { 'aria-hidden': 'true' }, '🎯'),
+          ' Practice these',
+        ),
+      )
+    : null;
 
   const promoted = summary.promoted && !practice;
   const streakChip =
@@ -111,6 +149,7 @@ export function resultsScreen(opts: {
       starRow,
       streakChip,
       stats,
+      missedSection,
       earnedRow,
       h('div', { class: 'btn-row results-actions' }, buttons),
     ),

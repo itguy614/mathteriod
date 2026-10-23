@@ -143,6 +143,16 @@ export const HULL = {
   wrongGraceSec: 0.5,
 } as const;
 
+/** Teaching feedback after a wrong answer. */
+export const REVEAL = {
+  /** How long the full fact ("7 × 8 = 56") replaces "7 × 8 = ?". */
+  factSec: 2.2,
+  /** Wrong answers on the same question before the correct rock gets a pulsing outline. */
+  hintAfterMisses: 2,
+  /** Teaching color for the revealed fact. */
+  color: '#ffd23b',
+} as const;
+
 /**
  * Gentle laser magnetism (never only toward the answer). Each bolt locks at fire
  * time onto the rock its aim line passes closest to, and only curves toward that

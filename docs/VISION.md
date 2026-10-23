@@ -26,6 +26,12 @@ Promotion comes only when a child has actually mastered a set of facts.
 - **Wrong answer:** Shooting a wrong asteroid **splits it into two smaller asteroids**, so the
   field gets more crowded, and chips the hull. Spraying shots at every rock no longer clears a
   level for free. The fact is recorded as missed for adaptive practice.
+- **Teaching feedback:** After a miss, the equation briefly shows the full fact in gold
+  (`7 × 8 = 56`, read aloud when Read Aloud is on), then returns to `= ?` so the player still
+  finds the answer. A second miss on the same question makes the correct rock pulse.
+- **Streak meter:** Pips beside the hull count correct answers in a row toward the next repair.
+- **Results:** A "Facts to practice" list shows the facts missed that level, with a one-tap
+  Practice session on them.
 - **Lose a level:** When the hull runs out (collisions and wrong answers combined).
 - **On failure:** Encouraging message and an instant retry. Correct answers still count toward
   mastery stats. After 2–3 consecutive failures, the game quietly eases off (slower asteroids,

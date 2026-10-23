@@ -77,6 +77,38 @@
   opacity: 0.55;
   transform: scale(0.82);
 }
+.mt-hud-lives,
+.mt-hud-streak { display: inline-flex; align-items: center; gap: 8px; }
+.mt-hud-streak {
+  gap: 4px;
+  padding-left: 10px;
+  margin-left: 2px;
+  border-left: 1.5px solid rgba(255, 255, 255, 0.22);
+}
+.mt-hud-pip {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 210, 59, 0.55);
+  transition: background 0.2s, box-shadow 0.2s;
+}
+.mt-hud-pip--on {
+  background: #ffd23b;
+  border-color: #ffd23b;
+  box-shadow: 0 0 8px rgba(255, 210, 59, 0.9);
+}
+.mt-hud-streak-count {
+  margin-left: 4px;
+  font-weight: 900;
+  font-size: 18px;
+  color: #ffd23b;
+  text-shadow: 0 2px 0 var(--mt-outline);
+}
+.mt-hud-streak--bump { animation: mt-streak-bump 0.35s ease-out; }
+@keyframes mt-streak-bump {
+  0% { transform: scale(1.25); }
+  100% { transform: none; }
+}
 .mt-hud-life--part { position: relative; }
 .mt-hud-life-base,
 .mt-hud-life-fill { position: absolute; inset: 0; display: flex; }
@@ -172,6 +204,11 @@
 .mt-hud-banner--new { animation: mt-pop 0.4s ease-out; }
 .mt-hud-banner--correct { animation: mt-bounce 0.45s ease-out; }
 .mt-hud-banner--wrong { animation: mt-wiggle 0.4s ease-in-out; }
+.mt-hud-banner--reveal {
+  color: #ffd23b;
+  border-color: #ffd23b;
+  box-shadow: 0 0 26px rgba(255, 210, 59, 0.55), inset 0 0 18px rgba(255, 210, 59, 0.18);
+}
 
 /* On narrow screens the banner moves below the corner widgets. */
 @media (max-width: 640px) {
@@ -504,5 +541,6 @@
   .mt-hud-banner--correct,
   .mt-hud-banner--wrong,
   .mt-hud-hull--damage,
-  .mt-hud-hull--repair { animation: none; }
+  .mt-hud-hull--repair,
+  .mt-hud-streak--bump { animation: none; }
 }

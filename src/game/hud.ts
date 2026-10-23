@@ -42,13 +42,15 @@ const HINT_HTML: Record<HintKind, string> = {
 
 /**
  * In-level DOM overlay (inside the game container, not #ui-root): equation
- * banner, hull indicators, score, level/stage, pause button and pause overlay.
+ * banner, hull indicators and streak meter, score, level/stage, pause button and pause overlay.
  */
 export class Hud {
   readonly root: HTMLDivElement;
   private banner: HTMLDivElement;
   private eq: HTMLSpanElement;
   private hull: HTMLDivElement;
+  private lives: HTMLSpanElement;
+  private streakEl: HTMLSpanElement;
   private score: HTMLSpanElement;
   private level: HTMLDivElement;
   private pauseBtn: HTMLButtonElement;
@@ -61,7 +63,7 @@ export class Hud {
     const root = document.createElement('div');
     root.className = 'mt-hud';
     root.innerHTML = `
-      <div class="mt-hud-hull" aria-label="Ship hull"></div>
+      <div class="mt-hud-hull"><span class="mt-hud-lives" role="img" aria-label="Ship hull"></span><span class="mt-hud-streak" role="img"></span></div>
       <div class="mt-hud-banner" role="status" aria-live="polite"><span class="mt-hud-eq"></span></div>
       <div class="mt-hud-right">
         <div class="mt-hud-score"><span class="mt-hud-score-label">Score</span> <span class="mt-hud-score-val">0</span></div>
@@ -83,6 +85,8 @@ export class Hud {
     this.banner = q('.mt-hud-banner');
     this.eq = q('.mt-hud-eq');
     this.hull = q('.mt-hud-hull');
+    this.lives = q('.mt-hud-lives');
+    this.streakEl = q('.mt-hud-streak');
     this.score = q('.mt-hud-score-val');
     this.level = q('.mt-hud-level');
     this.pauseBtn = q('.mt-hud-pause');
@@ -151,9 +155,36 @@ export class Hud {
       this.banner.classList.remove('mt-hud-banner--on');
       return;
     }
+    const revealing = this.banner.classList.contains('mt-hud-banner--reveal');
     this.eq.textContent = `${prompt} = ?`;
+    this.banner.classList.remove('mt-hud-banner--reveal');
     this.banner.classList.add('mt-hud-banner--on');
-    this.bump('mt-hud-banner--new');
+    // coming back from a reveal is the same question: no "new question" pop
+    if (!revealing) this.bump('mt-hud-banner--new');
+  }
+
+  /** Teaching moment after a wrong answer: the full fact in the teaching color. */
+  revealAnswer(prompt: string, answer: number): void {
+    this.eq.textContent = `${prompt} = ${answer}`;
+    this.banner.classList.add('mt-hud-banner--on', 'mt-hud-banner--reveal');
+  }
+
+  /**
+   * Streak meter beside the hull: `every` pips fill with correct answers in a
+   * row (a full row repairs the hull), plus a "🔥 N" count from 2 in a row.
+   */
+  setStreak(streak: number, every: number): void {
+    const filled = streak > 0 && streak % every === 0 ? every : streak % every;
+    let html = '';
+    for (let i = 0; i < every; i++) html += `<span class="mt-hud-pip${i < filled ? ' mt-hud-pip--on' : ''}"></span>`;
+    if (streak >= 2) html += `<span class="mt-hud-streak-count"><span aria-hidden="true">🔥</span>${streak}</span>`;
+    this.streakEl.innerHTML = html;
+    this.streakEl.setAttribute('aria-label', `${streak} correct in a row. ${every} in a row repairs the hull.`);
+    if (streak > 0) {
+      this.streakEl.classList.remove('mt-hud-streak--bump');
+      void this.streakEl.offsetWidth;
+      this.streakEl.classList.add('mt-hud-streak--bump');
+    }
   }
 
   /** Brief banner reaction: a bounce on correct, a wiggle on wrong. */
@@ -184,9 +215,9 @@ export class Hud {
       }
     }
     if (shield !== 'none') html += `<span class="mt-hud-shield${shield === 'used' ? ' mt-hud-shield--used' : ''}">${SHIELD_SVG}</span>`;
-    this.hull.innerHTML = html;
+    this.lives.innerHTML = html;
     const left = Math.round((hp / segments) * 10) / 10;
-    this.hull.setAttribute('aria-label', `Ship hull: ${left} of ${ships}${shield === 'up' ? ', shield ready' : ''}`);
+    this.lives.setAttribute('aria-label', `Ship hull: ${left} of ${ships}${shield === 'up' ? ', shield ready' : ''}`);
     if (pulse) {
       const h = this.hull;
       h.classList.remove('mt-hud-hull--damage', 'mt-hud-hull--repair');
