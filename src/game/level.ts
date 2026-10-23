@@ -83,6 +83,9 @@ export class LevelController {
   private damage = 0;
   /** Correct answers in a row; a wrong answer resets it. */
   private streak = 0;
+  private bestStreak = 0;
+  /** Hull segments lost this level (for the result; repairs don't subtract). */
+  private damageTaken = 0;
   private wrongGrace = 0;
   /** Wrong answers on the current question (drives the fact reveal and rock hint). */
   private questionMisses = 0;
@@ -524,6 +527,9 @@ export class LevelController {
           score: this.score,
           ufoHits: this.ufoHits,
           bossesBeaten: this.bossesBeaten,
+          bestStreak: this.bestStreak,
+          hullDamage: this.damageTaken,
+          waves: this.waves.length,
         };
       }
     }
@@ -818,6 +824,7 @@ export class LevelController {
     if (responseMs < LEVEL.speedyMs) effects.popSpeedy(bonus, x, y);
     effects.flash();
     this.streak++;
+    this.bestStreak = Math.max(this.bestStreak, this.streak);
     hud.setStreak(this.streak, HULL.repairStreak);
     if (this.streak % HULL.repairStreak === 0 && this.damage > 0) this.repairHull();
     if (this.streak % POWERUP.every === 0) this.dropPowerUp(x, y);
@@ -1217,6 +1224,7 @@ export class LevelController {
     s.alive = false;
     s.thrustAmt = 0;
     s.vel.set(0, 0);
+    this.damageTaken += Math.min(HULL.collisionDamage, HULL_MAX - this.damage);
     this.damage = Math.min(HULL_MAX, this.damage + HULL.collisionDamage);
     this.updateHull('damage');
     this.safeCall(() => this.callbacks.onShipHit?.(this.hitsTaken, HITS_ALLOWED));
@@ -1228,6 +1236,7 @@ export class LevelController {
   private wrongAnswerDamage(): void {
     const s = this.ship;
     const { audio, effects, gfx } = this.ctx;
+    this.damageTaken += Math.min(HULL.wrongDamage, HULL_MAX - this.damage);
     this.damage = Math.min(HULL_MAX, this.damage + HULL.wrongDamage);
     this.updateHull('damage');
     if (this.damage < HULL_MAX) {

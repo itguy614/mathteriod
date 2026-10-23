@@ -1,5 +1,7 @@
 import type { AudioBus, Fact, LevelResult, LevelSummary } from '../../types';
 import { factById } from '../../learning/index';
+import type { BadgeDef } from '../../store/badges';
+import { BADGE_STARDUST } from '../../store/badges';
 import { starsForAccuracy } from '../../store/economy';
 import { countUp, h } from '../dom';
 import type { Screen } from '../router';
@@ -40,6 +42,8 @@ export function resultsScreen(opts: {
   onBase(): void;
   /** Start a practice session on the facts missed this level. */
   onPracticeFacts(facts: Fact[]): void;
+  /** Badges newly earned this level (their Stardust is already in `earned`). */
+  badges?: BadgeDef[];
   /**
    * Practice variant: Play again / Change skills / Base, never a promotion or
    * "new best". `streak` = clears in a row this session (shown from 2).
@@ -82,6 +86,27 @@ export function resultsScreen(opts: {
       opts.newBest && !practice ? h('span', { class: 'new-best' }, 'NEW BEST!') : null,
     ),
   );
+
+  const badges = opts.badges ?? [];
+  const badgeSection = badges.length
+    ? h(
+        'div',
+        { class: 'new-badges', role: 'status' },
+        h('h3', { class: 'new-badges-title' }, badges.length === 1 ? '🏅 New badge!' : `🏅 ${badges.length} new badges!`),
+        h(
+          'ul',
+          { class: 'new-badges-list' },
+          badges.map((b) =>
+            h(
+              'li',
+              { class: 'new-badge' },
+              h('span', { class: 'badge-icon', 'aria-hidden': 'true' }, b.icon),
+              h('span', { class: 'new-badge-text' }, h('strong', null, b.name), h('span', null, `${b.description} · +${BADGE_STARDUST} ✦`)),
+            ),
+          ),
+        ),
+      )
+    : null;
 
   const missed = missedFacts(result);
   const missedSection = missed.length
@@ -149,6 +174,7 @@ export function resultsScreen(opts: {
       starRow,
       streakChip,
       stats,
+      badgeSection,
       missedSection,
       earnedRow,
       h('div', { class: 'btn-row results-actions' }, buttons),

@@ -107,6 +107,11 @@ For example, they can drill the ×7 table they're learning at school.
 - **Galaxy map** (from Base): every mission stage is a planet on a path, grouped by operation.
   Done planets are lit with ✓, the current one pulses with its mastery %, later ones are locked;
   review stages show the 👾 boss marker. States use icons and words, never color alone.
+- **Badges:** 27 achievements, each paying 20 Stardust once: pilot badges (first clear,
+  flawless, 10 and 25 in a row, no-damage 3-wave clear, fast clear, comeback, UFO, boss,
+  practice), journey badges (finish each operation, beat the final boss) and ×1–×12 times-table
+  badges (every fact in the family answered fast). New ones are announced on the results
+  screen; the shelf lives under the galaxy map.
 
 ## Rewards and customization
 

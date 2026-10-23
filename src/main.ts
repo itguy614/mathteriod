@@ -6,7 +6,17 @@ import type { Fact, LevelConfig, LevelResult, Operation, Profile, Question, Sett
 import { AudioEngine, speechSupported } from './audio';
 import { createGame } from './game/index';
 import { LearningEngine, NEEDS_PRACTICE, STAGES, isSkillId, weakestFacts } from './learning/index';
-import { LocalProfileStore, resetProfileProgress, stardustForLevel, stardustForPractice } from './store';
+import {
+  BADGES,
+  BADGE_STARDUST,
+  LocalProfileStore,
+  newBadges,
+  resetProfileProgress,
+  stardustForLevel,
+  stardustForPractice,
+  type BadgeDef,
+} from './store';
+import { badgeShelf } from './ui/screens/badges';
 import { Router } from './ui/router';
 import { hangarCenter } from './ui/layout';
 import { profilePickerScreen } from './ui/screens/profiles';
@@ -155,6 +165,17 @@ function goHome(): void {
   );
 }
 
+/** Record newly earned badges on the profile (the caller pays their Stardust). */
+function awardBadges(p: Profile, ctx: Parameters<typeof newBadges>[0]): BadgeDef[] {
+  const have = p.badges ?? {};
+  const fresh = newBadges(ctx, have);
+  if (fresh.length) {
+    const now = Date.now();
+    p.badges = { ...have, ...Object.fromEntries(fresh.map((b) => [b.id, now])) };
+  }
+  return fresh;
+}
+
 function goMap(): void {
   const p = requireProfile();
   const engine = new LearningEngine(p.learning);
@@ -164,6 +185,7 @@ function goMap(): void {
       stages: STAGES,
       stageIndex: engine.getState().stageIndex,
       progress: engine.stageProgress(),
+      extra: badgeShelf(BADGES, p.badges ?? {}),
       onBack: goHome,
     }),
   );
@@ -296,9 +318,12 @@ async function finishLevel(engine: LearningEngine, result: LevelResult): Promise
   paused = false;
   audio.setThrust(false);
   const p = requireProfile();
+  const before = p.learning;
+  const stageId = engine.currentStage().id;
   const summary = engine.recordLevel(result);
   p.learning = engine.getState();
-  const earned = stardustForLevel(result, summary);
+  const badges = awardBadges(p, { result, summary, stageId, practice: false, before, after: p.learning });
+  const earned = stardustForLevel(result, summary) + badges.length * BADGE_STARDUST;
   p.stardust += earned;
   const newBest = result.score > p.bestScore && result.score > 0;
   if (newBest) p.bestScore = result.score;
@@ -315,6 +340,7 @@ async function finishLevel(engine: LearningEngine, result: LevelResult): Promise
       onHangar: goHangar,
       onBase: goHome,
       onPracticeFacts: practiceMissedFacts,
+      badges,
     }),
   );
 }
@@ -409,9 +435,11 @@ async function finishPractice(engine: LearningEngine, result: LevelResult): Prom
   audio.setThrust(false);
   const session = practice;
   const p = requireProfile();
+  const before = p.learning;
   const summary = engine.recordPractice(result);
   p.learning = engine.getState();
-  const earned = stardustForPractice(result, summary);
+  const badges = awardBadges(p, { result, summary, stageId: 'practice', practice: true, before, after: p.learning });
+  const earned = stardustForPractice(result, summary) + badges.length * BADGE_STARDUST;
   p.stardust += earned;
   // Practice scores never touch bestScore (players pick their own difficulty).
   session.streak = result.outcome === 'cleared' ? session.streak + 1 : 0;
@@ -428,6 +456,7 @@ async function finishPractice(engine: LearningEngine, result: LevelResult): Prom
       onHangar: goHangar,
       onBase: goHome,
       onPracticeFacts: practiceMissedFacts,
+      badges,
       practice: { streak: session.streak, onPlayAgain: launchPractice, onChangeSkills: goPractice },
     }),
   );

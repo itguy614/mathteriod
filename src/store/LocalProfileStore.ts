@@ -2,6 +2,7 @@ import type { Profile } from '../types';
 import { CATALOG } from '../catalog';
 import { isSkillId } from '../learning/skills';
 import { buildNewProfile, defaultSettings, freeItemIds, type ProfileStore } from './ProfileStore';
+import { badgeById } from './badges';
 
 export const STORAGE_KEY = 'mathteroid:v1';
 export const SCHEMA_VERSION = 2;
@@ -50,6 +51,16 @@ export function migrate(raw: unknown): StoredData {
   return data;
 }
 
+/** Keep known badge ids with a numeric earned-at time. */
+function cleanBadges(raw: unknown): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (!raw || typeof raw !== 'object') return out;
+  for (const [id, t] of Object.entries(raw as Record<string, unknown>)) {
+    if (badgeById(id) && typeof t === 'number' && Number.isFinite(t)) out[id] = t;
+  }
+  return out;
+}
+
 /** Fill in fields that may be missing from older / hand-edited saves. */
 export function repairProfile(p: Profile): Profile {
   // The equipped body is always owned (covers the chosen starter ship).
@@ -64,6 +75,7 @@ export function repairProfile(p: Profile): Profile {
     loadout: { ...p.loadout, perks: Array.isArray(p.loadout?.perks) ? p.loadout.perks : [] },
     // Keep only known skill ids, once each.
     practiceSkills: Array.isArray(p.practiceSkills) ? [...new Set(p.practiceSkills.filter(isSkillId))] : [],
+    badges: cleanBadges(p.badges),
   };
 }
 

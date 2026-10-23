@@ -165,6 +165,12 @@ export interface LevelResult {
   ufoHits?: number;
   /** Boss waves won. */
   bossesBeaten?: number;
+  /** Most correct answers in a row during the level. */
+  bestStreak?: number;
+  /** Hull segments lost (collisions and wrong answers; repairs don't subtract). */
+  hullDamage?: number;
+  /** Waves in the level. */
+  waves?: number;
 }
 
 /** Returned by the learning engine after recording a level. */
@@ -263,6 +269,8 @@ export interface Profile {
   settings: Settings;
   /** Practice mode: the skill ids last picked (e.g. ["mul:7"]). Optional for older saves. */
   practiceSkills?: string[];
+  /** Badges earned: id -> epoch ms when earned. Optional for older saves. */
+  badges?: Record<string, number>;
 }
 
 // ---------------------------------------------------------------------------
