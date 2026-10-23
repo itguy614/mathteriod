@@ -7,10 +7,12 @@ export function homeScreen(opts: {
   profile: Profile;
   stageName: string;
   stageProgress: number;
+  /** One line about the flight just made ("🚀 12% closer to Comet Tail!"), if any. */
+  note?: string | null;
   onLaunch(): void;
   onPractice(): void;
   onHangar(): void;
-  onMap(): void;
+  onBadges(): void;
   onSettings(): void;
   onSwitchPilot(): void;
 }): Screen {
@@ -38,16 +40,17 @@ export function homeScreen(opts: {
       { class: 'home-top' },
       h(
         'button',
-        { class: 'pilot-chip', onclick: opts.onSwitchPilot, 'aria-label': `${p.name}. Switch pilot` },
+        { class: 'pilot-chip interactive', onclick: opts.onSwitchPilot, 'aria-label': `${p.name}. Switch pilot` },
         h('span', { class: 'pilot-avatar', 'aria-hidden': 'true' }, bodyIcon(p.loadout.body)),
         h('span', { class: 'pilot-text' }, h('span', { class: 'pilot-name' }, p.name), h('span', { class: 'pilot-switch' }, '⇄ switch')),
       ),
-      h('span', { class: 'top-right' }, stardustBadge(p.stardust, 'big'), h('button', { class: 'btn btn-icon btn-ghost', onclick: opts.onSettings, 'aria-label': 'Settings' }, '⚙️')),
+      h('span', { class: 'top-right interactive' }, stardustBadge(p.stardust, 'big'), h('button', { class: 'btn btn-icon btn-ghost', onclick: opts.onSettings, 'aria-label': 'Settings' }, '⚙️')),
     ),
     h('div', { class: 'preview-space', 'aria-hidden': 'true' }),
+    opts.note ? h('div', { class: 'galaxy-note interactive', role: 'status' }, opts.note) : null,
     h(
       'div',
-      { class: 'panel dock-panel home-dock' },
+      { class: 'panel dock-panel home-dock interactive' },
       h(
         'div',
         { class: 'stage-card' },
@@ -60,13 +63,14 @@ export function homeScreen(opts: {
           h('span', { class: 'progress-label' }, pct >= 100 ? '⭐ Ready!' : `${pct}%`),
         ),
         p.bestScore > 0 ? h('div', { class: 'best' }, h('span', { 'aria-hidden': 'true' }, '🏆'), ` Best ${p.bestScore.toLocaleString()}`) : null,
+        h('div', { class: 'galaxy-tip' }, 'Drag the galaxy to look around · tap a planet'),
       ),
       h('div', { class: 'launch-row' }, launch, practice),
       h(
         'div',
         { class: 'nav-row' },
         h('button', { class: 'btn btn-secondary btn-big', onclick: opts.onHangar }, h('span', { 'aria-hidden': 'true' }, '🛠️'), ' Hangar'),
-        h('button', { class: 'btn btn-secondary btn-big', onclick: opts.onMap }, h('span', { 'aria-hidden': 'true' }, '🗺️'), ' Map'),
+        h('button', { class: 'btn btn-secondary btn-big', onclick: opts.onBadges }, h('span', { 'aria-hidden': 'true' }, '🏅'), ' Badges'),
       ),
     ),
   );
@@ -76,6 +80,8 @@ export function homeScreen(opts: {
   return {
     name: 'home',
     el,
+    // drags and taps on empty space reach the galaxy behind
+    passThrough: true,
     onEnter() {
       launch.focus({ preventScroll: true });
       document.addEventListener('keydown', onKey);

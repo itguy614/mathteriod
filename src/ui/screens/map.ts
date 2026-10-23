@@ -17,7 +17,8 @@ function planetName(stage: StageDef): string {
 }
 
 /**
- * Galaxy map: every mission stage as a planet on a path, grouped by operation.
+ * Badges & journey (Base -> Badges): the badge shelf, then every mission stage
+ * as a planet on a path, grouped by operation (the list form of the galaxy Base).
  * Done planets are lit with a ✓, the current one pulses with its mastery %,
  * later ones are dim and locked. Review stages carry a boss marker.
  * Never color alone: each state also has an icon and words.
@@ -27,7 +28,7 @@ export function mapScreen(opts: {
   stageIndex: number;
   /** 0..1 progress toward leaving the current stage. */
   progress: number;
-  /** Optional content under the map (the badge shelf). */
+  /** Content above the stage list (the badge shelf). */
   extra?: HTMLElement | null;
   onBack(): void;
 }): Screen {
@@ -76,17 +77,12 @@ export function mapScreen(opts: {
       'header',
       { class: 'page-head' },
       h('button', { class: 'btn btn-icon btn-ghost', onclick: opts.onBack, 'aria-label': 'Back' }, '‹'),
-      h('h2', { class: 'page-title' }, 'Galaxy map'),
+      h('h2', { class: 'page-title' }, 'Badges & journey'),
       h('span', { class: 'head-spacer' }),
     ),
-    h('div', { class: 'panel map-panel' }, h('ol', { class: 'map-path', 'aria-label': 'Mission stages' }, rows)),
     opts.extra ?? null,
+    h('h2', { class: 'journey-title' }, '🪐 Journey'),
+    h('div', { class: 'panel map-panel' }, h('ol', { class: 'map-path', 'aria-label': 'Mission stages' }, rows)),
   );
-  return {
-    name: 'map',
-    el,
-    onEnter() {
-      el.querySelector('.map-current')?.scrollIntoView({ block: 'center' });
-    },
-  };
+  return { name: 'map', el };
 }

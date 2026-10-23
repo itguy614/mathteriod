@@ -203,6 +203,32 @@ export const BOSS = {
   defeatScore: 1000,
 } as const;
 
+/** Galaxy Base: the route of planets the ship flies along between missions. */
+export const GALAXY = {
+  /** Distance between planets along the route, and how far it winds up and down. */
+  gap: 32,
+  wave: 9,
+  planetRadius: 5.2,
+  shipScale: 1.5,
+  /** Where the ship parks beyond a planet's center at t = 0 (and stops short of the next one). */
+  parkGap: 9,
+  /** Planet glow (emissive share of its color): bloom turns much more into a white sun. */
+  glowCurrent: 0.2,
+  glowDone: 0.1,
+  /** Planet surface brightness (share of its color) under the key light. */
+  surface: 0.6,
+  /** Flight after a mission: base seconds (plus a bit per distance), and the longer arrival at a new planet. */
+  nudgeSec: 1.1,
+  arriveSec: 2.6,
+  /** Launch dive: seconds, and how far the ship boosts ahead. */
+  launchSec: 0.9,
+  launchDistance: 70,
+  /** After a drag, the view waits this long before gliding back to the ship. */
+  dragHoldSec: 1.5,
+  /** How long a tapped planet's name/status stays up. */
+  infoSec: 3,
+} as const;
+
 /** Between waves: a short breather, and a free hull repair. */
 export const WAVE = {
   pauseSec: 2,

@@ -104,9 +104,15 @@ For example, they can drill the ×7 table they're learning at school.
 
 ## Journey
 
-- **Galaxy map** (from Base): every mission stage is a planet on a path, grouped by operation.
-  Done planets are lit with ✓, the current one pulses with its mastery %, later ones are locked;
-  review stages show the 👾 boss marker. States use icons and words, never color alone.
+- **Base is the galaxy:** a 3D scene of every mission stage as a planet on a winding route,
+  with the player's own ship on it. Stage progress carries the ship up to 85% of the way to the
+  next planet; promotion flies it the rest of the way and the new planet lights up. The ship
+  only ever flies forward (a rough mission leaves it parked, with an encouraging note). Kids
+  drag to look along the route and tap a planet for its name and status (✓ done, 🚀 here,
+  🔒 locked, 👾 boss). Launch is a quick boost along the route into the mission; Next on the
+  results screen goes by way of the galaxy, so every mission shows the flight. A tap skips.
+- **Badges & journey** (Base → Badges): the badge shelf, then the stages as a list (icons and
+  words, never color alone).
 - **Badges:** 27 achievements, each paying 20 Stardust once: pilot badges (first clear,
   flawless, 10 and 25 in a row, no-damage 3-wave clear, fast clear, comeback, UFO, boss,
   practice), journey badges (finish each operation, beat the final boss) and ×1–×12 times-table

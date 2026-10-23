@@ -1,9 +1,10 @@
 import * as THREE from 'three';
-import type { AudioBus, GameCallbacks, GameEngine, LevelConfig, LevelOptions, ShipLoadout } from '../types';
+import type { AudioBus, GalaxyPos, GalaxyStop, GameCallbacks, GameEngine, LevelConfig, LevelOptions, ShipLoadout } from '../types';
 import { AsteroidField, type Rect } from './asteroids';
 import { Background } from './background';
 import { ASTEROID, ATTRACT_ASTEROIDS, TAP_TARGET, TOUCH, type AsteroidSize } from './constants';
 import { Effects } from './effects';
+import { GalaxyView } from './galaxy';
 import { Graphics } from './graphics';
 import { HangarView } from './hangar';
 import { Hud } from './hud';
@@ -13,7 +14,7 @@ import { Lasers } from './lasers';
 import { LevelController, type GameContext } from './level';
 import { Particles } from './particles';
 
-type Mode = 'attract' | 'level' | 'hangar';
+type Mode = 'attract' | 'level' | 'hangar' | 'galaxy';
 
 /**
  * Top-level engine: owns the render loop and switches between attract mode
@@ -27,6 +28,7 @@ export class Engine implements GameEngine {
   private level: LevelController | null = null;
   private callbacks: GameCallbacks | null = null;
   private hangar: HangarView | null = null;
+  private galaxy: GalaxyView | null = null;
   private paused = false;
   private userPaused = false;
   private thrustOn = false;
@@ -87,6 +89,7 @@ export class Engine implements GameEngine {
     document.addEventListener('visibilitychange', onVis);
     this.cleanup.push(() => document.removeEventListener('visibilitychange', onVis));
 
+    this.bindGalaxyPointer();
     this.enterAttract(false);
     this.last = performance.now();
     this.raf = requestAnimationFrame(this.loop);
@@ -168,6 +171,78 @@ export class Engine implements GameEngine {
     hud.show(false);
     this.hangar = new HangarView(this.gfx, lasers, loadout);
     this.hangar.setCenter(c.x, c.y);
+  }
+
+  showGalaxy(opts: { stops: GalaxyStop[]; at: GalaxyPos; flyTo?: GalaxyPos; loadout: ShipLoadout; center?: { x: number; y: number } }): Promise<void> {
+    if (this.disposed) return Promise.resolve();
+    const c = opts.center ?? { x: 0.5, y: 0.5 };
+    if (this.mode !== 'galaxy' || !this.galaxy) {
+      this.teardownMode();
+      this.mode = 'galaxy';
+      this.paused = false;
+      const { field, particles, effects, lasers, hud, labels } = this.ctx;
+      field.clear();
+      lasers.clear();
+      particles.clear();
+      particles.setDepthTest(false);
+      effects.clear();
+      hud.show(false);
+      this.galaxy = new GalaxyView(this.gfx, labels, particles, opts.stops, opts.loadout, opts.at);
+    } else {
+      this.galaxy.ship.setLoadout(opts.loadout);
+    }
+    this.galaxy.setCenter(c.x, c.y);
+    return opts.flyTo ? this.galaxy.flyTo(opts.flyTo) : Promise.resolve();
+  }
+
+  galaxyLaunch(): Promise<void> {
+    if (this.disposed || this.mode !== 'galaxy' || !this.galaxy) return Promise.resolve();
+    return this.galaxy.launch();
+  }
+
+  /** Drag to look along the route; a tap shows a planet's name (or skips an animation). */
+  private bindGalaxyPointer(): void {
+    const el = this.container;
+    let down: { id: number; x: number; y: number; lastX: number; moved: boolean } | null = null;
+    const onDown = (e: PointerEvent) => {
+      if (this.mode !== 'galaxy' || !this.galaxy || down) return;
+      down = { id: e.pointerId, x: e.clientX, y: e.clientY, lastX: e.clientX, moved: false };
+    };
+    const onMove = (e: PointerEvent) => {
+      if (!down || e.pointerId !== down.id || !this.galaxy) return;
+      if (!down.moved && Math.hypot(e.clientX - down.x, e.clientY - down.y) > 8) down.moved = true;
+      if (down.moved) this.galaxy.dragBy(e.clientX - down.lastX);
+      down.lastX = e.clientX;
+    };
+    const onUp = (e: PointerEvent) => {
+      if (!down || e.pointerId !== down.id) return;
+      const tap = !down.moved;
+      down = null;
+      const g = this.galaxy;
+      if (!g || this.mode !== 'galaxy') return;
+      g.release();
+      if (!tap) return;
+      g.skip();
+      const w = this.clientToWorld(e.clientX, e.clientY);
+      if (w && g.tapAt(w.x, w.y)) this.audio.play('click');
+    };
+    const onWheel = (e: WheelEvent) => {
+      if (this.mode !== 'galaxy' || !this.galaxy) return;
+      this.galaxy.dragBy(-(Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY));
+      this.galaxy.release();
+    };
+    el.addEventListener('pointerdown', onDown);
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+    el.addEventListener('wheel', onWheel, { passive: true });
+    this.cleanup.push(() => {
+      el.removeEventListener('pointerdown', onDown);
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+      el.removeEventListener('wheel', onWheel);
+    });
   }
 
   dispose(): void {
@@ -328,6 +403,11 @@ export class Engine implements GameEngine {
       this.hangar.dispose();
       this.hangar = null;
     }
+    if (this.galaxy) {
+      this.galaxy.dispose();
+      this.galaxy = null;
+      this.ctx.particles.clear();
+    }
     this.ctx.input.setEnabled(false);
     this.ctx.input.setPaused(false);
     this.ctx.field.setBlockers([]);
@@ -408,6 +488,9 @@ export class Engine implements GameEngine {
         case 'hangar':
           this.hangar?.update(simDt, t, particles);
           this.focus.multiplyScalar(0.95);
+          break;
+        case 'galaxy':
+          if (this.galaxy) this.focus.copy(this.galaxy.update(simDt, t));
           break;
         default: {
           field.update(simDt);

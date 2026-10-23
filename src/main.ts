@@ -2,7 +2,7 @@
  * Mathteroid entry point: wires audio, game, learning, store and UI together
  * and owns the screen flow (a small state machine driven by UI callbacks).
  */
-import type { Fact, LevelConfig, LevelResult, Operation, Profile, Question, Settings } from './types';
+import type { Fact, GalaxyPos, GalaxyStop, LevelConfig, LevelResult, Operation, Profile, Question, Settings } from './types';
 import { AudioEngine, speechSupported } from './audio';
 import { createGame } from './game/index';
 import { LearningEngine, NEEDS_PRACTICE, STAGES, isSkillId, weakestFacts } from './learning/index';
@@ -18,7 +18,7 @@ import {
 } from './store';
 import { badgeShelf } from './ui/screens/badges';
 import { Router } from './ui/router';
-import { hangarCenter } from './ui/layout';
+import { galaxyCenter } from './ui/layout';
 import { profilePickerScreen } from './ui/screens/profiles';
 import { newPilotScreen } from './ui/screens/newPilot';
 import { homeScreen } from './ui/screens/home';
@@ -145,24 +145,92 @@ function selectProfile(p: Profile): void {
   goHome();
 }
 
-function goHome(): void {
+/** Galaxy route: stage progress takes the ship this far toward the next planet; promotion arrives. */
+const ROUTE_SHARE = 0.85;
+
+/** "Subtraction: Gravity Well" -> "Gravity Well". */
+function planetName(stageName: string): string {
+  const i = stageName.indexOf(': ');
+  return i >= 0 ? stageName.slice(i + 2) : stageName;
+}
+
+/** Where the profile's ship belongs on the route right now. */
+function galaxyTarget(engine: LearningEngine): GalaxyPos {
+  const stage = engine.getState().stageIndex;
+  const last = stage >= STAGES.length - 1;
+  return { stage, t: last ? 0 : Math.min(ROUTE_SHARE, engine.stageProgress() * ROUTE_SHARE) };
+}
+
+/** Planets as they looked when the ship was at stage `current` (the flight reveals the rest). */
+function galaxyStops(current: number): GalaxyStop[] {
+  return STAGES.map((s, i) => ({
+    name: planetName(s.name),
+    op: s.op,
+    boss: s.id.endsWith('review'),
+    state: i < current ? 'done' : i === current ? 'current' : 'locked',
+  }));
+}
+
+/** Outcome of the mission just played (for Base's one-line note), cleared once shown. */
+let lastMission: 'cleared' | 'failed' | null = null;
+let launchingFromGalaxy = false;
+
+/**
+ * Base is the galaxy: the ship flies forward from where Base last showed it to
+ * where the profile's progress puts it (never backwards). With `autoLaunch`
+ * (Next on the results screen) the next mission starts once it arrives.
+ */
+function goHome(opts: { autoLaunch?: boolean } = {}): void {
   practice = null;
+  launchingFromGalaxy = false;
   const p = requireProfile();
   const engine = new LearningEngine(p.learning);
-  game.showHangar(p.loadout, hangarCenter());
+  const target = galaxyTarget(engine);
+  const shown = p.mapShown;
+  const from = shown && shown.stage <= target.stage && shown.stage >= 0 ? shown : target;
+  const to = from.stage === target.stage && from.t > target.t ? from : target;
+  const promoted = to.stage > from.stage;
+  const flies = to.stage + to.t > from.stage + from.t + 1e-3;
+  const next = STAGES[to.stage + 1];
+  let note: string | null = null;
+  if (promoted) note = `🪐 Welcome to ${planetName(STAGES[to.stage].name)}!`;
+  else if (flies && next) note = `🚀 ${Math.max(1, Math.round(((to.t - from.t) / ROUTE_SHARE) * 100))}% closer to ${planetName(next.name)}!`;
+  else if (lastMission === 'failed') note = '⛽ Refueled and ready for another try!';
+  lastMission = null;
+
   router.show(
     homeScreen({
       profile: p,
       stageName: engine.currentStage().name,
       stageProgress: engine.stageProgress(),
-      onLaunch: launchLevel,
+      note,
+      onLaunch: launchFromGalaxy,
       onPractice: goPractice,
       onHangar: goHangar,
-      onMap: goMap,
+      onBadges: goMap,
       onSettings: goSettings,
       onSwitchPilot: () => void goProfiles(),
     }),
   );
+  if (shown?.stage !== to.stage || shown.t !== to.t) {
+    p.mapShown = { ...to };
+    void persist(p);
+  }
+  void game
+    .showGalaxy({ stops: galaxyStops(from.stage), at: from, flyTo: to, loadout: p.loadout, center: galaxyCenter() })
+    .then(() => {
+      if (opts.autoLaunch && router.currentName === 'home') launchFromGalaxy();
+    });
+}
+
+/** Launch from Base: the ship dives off along the route, then the mission starts. */
+function launchFromGalaxy(): void {
+  if (launchingFromGalaxy) return;
+  launchingFromGalaxy = true;
+  void game.galaxyLaunch().then(() => {
+    if (router.currentName === 'home') launchLevel();
+    launchingFromGalaxy = false;
+  });
 }
 
 /** Record newly earned badges on the profile (the caller pays their Stardust). */
@@ -322,6 +390,7 @@ async function finishLevel(engine: LearningEngine, result: LevelResult): Promise
   const stageId = engine.currentStage().id;
   const summary = engine.recordLevel(result);
   p.learning = engine.getState();
+  lastMission = result.outcome;
   const badges = awardBadges(p, { result, summary, stageId, practice: false, before, after: p.learning });
   const earned = stardustForLevel(result, summary) + badges.length * BADGE_STARDUST;
   p.stardust += earned;
@@ -335,10 +404,11 @@ async function finishLevel(engine: LearningEngine, result: LevelResult): Promise
       earned,
       newBest,
       audio,
-      onNext: launchLevel,
+      // Next goes by way of the galaxy: the ship flies its progress, then dives in
+      onNext: () => goHome({ autoLaunch: true }),
       onRetry: launchLevel,
       onHangar: goHangar,
-      onBase: goHome,
+      onBase: () => goHome(),
       onPracticeFacts: practiceMissedFacts,
       badges,
     }),

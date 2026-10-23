@@ -271,6 +271,8 @@ export interface Profile {
   practiceSkills?: string[];
   /** Badges earned: id -> epoch ms when earned. Optional for older saves. */
   badges?: Record<string, number>;
+  /** Where the galaxy Base last showed the ship (it only ever flies forward from here). */
+  mapShown?: GalaxyPos;
 }
 
 // ---------------------------------------------------------------------------
@@ -296,6 +298,21 @@ export interface LevelOptions {
   showControlsHint: boolean;
 }
 
+/** A planet on the galaxy Base: one mission stage. */
+export interface GalaxyStop {
+  name: string;
+  op: Operation | 'mixed';
+  /** Review stage (ends in a boss). */
+  boss: boolean;
+  state: 'done' | 'current' | 'locked';
+}
+
+/** A spot on the galaxy route: `t` (0..1) of the way from planet `stage` to the next. */
+export interface GalaxyPos {
+  stage: number;
+  t: number;
+}
+
 export interface GameEngine {
   /** Start a level. Renders into the container passed at construction. */
   startLevel(config: LevelConfig, loadout: ShipLoadout, callbacks: GameCallbacks, options: LevelOptions): void;
@@ -311,5 +328,14 @@ export interface GameEngine {
    * don't cover it. Calling again updates loadout/framing live.
    */
   showHangar(loadout: ShipLoadout, center?: { x: number; y: number }): void;
+  /**
+   * Galaxy Base: planets on a route with the ship at `at`, framed at `center`
+   * (viewport fractions). With `flyTo` the ship then flies forward to it; the
+   * promise resolves when it arrives (immediately with nothing to fly).
+   * Calling again while showing updates framing and flies on.
+   */
+  showGalaxy(opts: { stops: GalaxyStop[]; at: GalaxyPos; flyTo?: GalaxyPos; loadout: ShipLoadout; center?: { x: number; y: number } }): Promise<void>;
+  /** From the galaxy: the ship boosts off along the route (about a second; a tap skips). */
+  galaxyLaunch(): Promise<void>;
   dispose(): void;
 }
