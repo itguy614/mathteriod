@@ -1,4 +1,4 @@
-# Build, test and publish the game to GitHub Pages: https://wolfienet.com/Mathteriod/
+# Build, test and publish the game to GitHub Pages: https://wolfienet.com/mathteriod/
 name: Deploy to GitHub Pages
 
 on:

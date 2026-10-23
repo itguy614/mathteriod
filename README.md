@@ -29,7 +29,7 @@ Game engine sandbox (loadout switcher, event log): `http://localhost:5173/src/ga
 ## Publish
 
 Every push to `main` runs `.github/workflows/pages.yml`: tests, a production build with
-`BASE_PATH=/Mathteriod/`, then a deploy to GitHub Pages at **https://wolfienet.com/Mathteriod/**
+`BASE_PATH=/mathteriod/`, then a deploy to GitHub Pages at **https://wolfienet.com/mathteriod/**
 (the repo's Pages site under the `itguy614.github.io` custom domain). Run it by hand from the
 Actions tab with "Run workflow". Profiles live in each player's browser (`localStorage`), so the
 published site and a local dev server keep separate pilots.
