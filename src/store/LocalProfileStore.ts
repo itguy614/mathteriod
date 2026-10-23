@@ -112,8 +112,8 @@ export class LocalProfileStore implements ProfileStore {
     return p ? clone(p) : undefined;
   }
 
-  async create(name: string, avatar: string, starterBody: string): Promise<Profile> {
-    const profile = buildNewProfile(name, avatar, starterBody);
+  async create(name: string, starterBody: string): Promise<Profile> {
+    const profile = buildNewProfile(name, starterBody);
     const data = this.read();
     data.profiles.push(profile);
     this.write(data);

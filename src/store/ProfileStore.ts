@@ -9,7 +9,7 @@ import { initialLearningState } from '../learning/index';
 export interface ProfileStore {
   list(): Promise<Profile[]>;
   get(id: string): Promise<Profile | undefined>;
-  create(name: string, avatar: string, starterBody: string): Promise<Profile>;
+  create(name: string, starterBody: string): Promise<Profile>;
   save(profile: Profile): Promise<void>;
   delete(id: string): Promise<void>;
 }
@@ -30,11 +30,10 @@ export function newProfileId(): string {
 }
 
 /** Build a brand-new profile (not yet persisted). */
-export function buildNewProfile(name: string, avatar: string, starterBody: string): Profile {
+export function buildNewProfile(name: string, starterBody: string): Profile {
   return {
     id: newProfileId(),
     name: name.trim().slice(0, 16) || 'Pilot',
-    avatar,
     createdAt: Date.now(),
     learning: initialLearningState(),
     stardust: 0,
@@ -47,10 +46,10 @@ export function buildNewProfile(name: string, avatar: string, starterBody: strin
 
 /**
  * "Start over": fresh learning state, stardust, items and best score.
- * Keeps identity (id, name, avatar, createdAt), settings and the base ship.
+ * Keeps identity (id, name, createdAt), settings and the base ship.
  */
 export function resetProfileProgress(profile: Profile): Profile {
   const starterBody = CATALOG.find((i) => i.id === profile.loadout.body && i.starter) ? profile.loadout.body : 'arrow';
-  const fresh = buildNewProfile(profile.name, profile.avatar, starterBody);
+  const fresh = buildNewProfile(profile.name, starterBody);
   return { ...fresh, id: profile.id, name: profile.name, createdAt: profile.createdAt, settings: { ...profile.settings } };
 }

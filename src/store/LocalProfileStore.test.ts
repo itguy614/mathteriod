@@ -17,7 +17,7 @@ describe('LocalProfileStore', () => {
   it('creates a profile with defaults and persists it', async () => {
     const storage = new MemoryStorage();
     const store = new LocalProfileStore(storage);
-    const p = await store.create('  Zoe  ', '🦊', 'saucer');
+    const p = await store.create('  Zoe  ', 'saucer');
     expect(p.name).toBe('Zoe');
     expect(p.stardust).toBe(0);
     expect(p.loadout.body).toBe('saucer');
@@ -38,7 +38,7 @@ describe('LocalProfileStore', () => {
 
   it('saves, gets and deletes', async () => {
     const store = new LocalProfileStore(new MemoryStorage());
-    const p = await store.create('Max', '🚀', 'arrow');
+    const p = await store.create('Max', 'arrow');
     p.stardust = 250;
     await store.save(p);
     expect((await store.get(p.id))?.stardust).toBe(250);
@@ -49,7 +49,7 @@ describe('LocalProfileStore', () => {
 
   it('returns copies, not live references', async () => {
     const store = new LocalProfileStore(new MemoryStorage());
-    const p = await store.create('Ada', '🐱', 'arrow');
+    const p = await store.create('Ada', 'arrow');
     p.stardust = 999;
     expect((await store.get(p.id))?.stardust).toBe(0);
   });
@@ -59,20 +59,20 @@ describe('LocalProfileStore', () => {
     storage.setItem(STORAGE_KEY, '{not json');
     const store = new LocalProfileStore(storage);
     expect(await store.list()).toEqual([]);
-    await store.create('Kid', '🐸', 'arrow');
+    await store.create('Kid', 'arrow');
     expect(await store.list()).toHaveLength(1);
   });
 
   it('falls back to memory when storage is unavailable or throws', async () => {
     const volatile = new LocalProfileStore(null);
     expect(volatile.isVolatile).toBe(true);
-    await volatile.create('Mem', '🐼', 'arrow');
+    await volatile.create('Mem', 'arrow');
     expect(await volatile.list()).toHaveLength(1);
 
     const storage = new MemoryStorage();
     storage.failWrites = true;
     const flaky = new LocalProfileStore(storage);
-    const p = await flaky.create('Flaky', '🦖', 'arrow');
+    const p = await flaky.create('Flaky', 'arrow');
     expect(await flaky.get(p.id)).toBeDefined();
   });
 
@@ -97,7 +97,7 @@ describe('LocalProfileStore', () => {
   it('keeps valid remembered practice skills and drops junk', async () => {
     const storage = new MemoryStorage();
     const store = new LocalProfileStore(storage);
-    const p = await store.create('Pia', '🦉', 'arrow');
+    const p = await store.create('Pia', 'arrow');
     p.practiceSkills = ['mul:7', 'mul:7', 'div:13', 'nope', 'sub:8'];
     await store.save(p);
     const again = (await new LocalProfileStore(storage).get(p.id))!;

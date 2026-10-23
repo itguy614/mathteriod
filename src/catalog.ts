@@ -15,16 +15,18 @@ export interface CatalogItem {
   hex?: string;
   /** Bodies marked starter are the three choices at profile creation. */
   starter?: boolean;
+  /** For kind 'body': small glyph shown on pilot tiles and ship cards. */
+  icon?: string;
 }
 
 export const CATALOG: CatalogItem[] = [
   // Bodies
-  { id: 'arrow', kind: 'body', name: 'Arrow', description: 'Classic sleek triangle fighter.', price: 200, starter: true },
-  { id: 'saucer', kind: 'body', name: 'Saucer', description: 'Round flying disc with a glowing dome.', price: 200, starter: true },
-  { id: 'stingray', kind: 'body', name: 'Stingray', description: 'Wide swept wings, low and fast-looking.', price: 200, starter: true },
-  { id: 'falcon', kind: 'body', name: 'Falcon', description: 'Twin-prong freighter with side pods.', price: 400 },
-  { id: 'titan', kind: 'body', name: 'Titan', description: 'Heavy armored cruiser with twin engines.', price: 800 },
-  { id: 'phoenix', kind: 'body', name: 'Phoenix', description: 'Feathered wings that flare when thrusting.', price: 1500 },
+  { id: 'arrow', kind: 'body', name: 'Arrow', description: 'Classic sleek triangle fighter.', price: 200, starter: true, icon: '🔺' },
+  { id: 'saucer', kind: 'body', name: 'Saucer', description: 'Round flying disc with a glowing dome.', price: 200, starter: true, icon: '🛸' },
+  { id: 'stingray', kind: 'body', name: 'Stingray', description: 'Wide swept wings, low and fast-looking.', price: 200, starter: true, icon: '🪁' },
+  { id: 'falcon', kind: 'body', name: 'Falcon', description: 'Twin-prong freighter with side pods.', price: 400, icon: '🦅' },
+  { id: 'titan', kind: 'body', name: 'Titan', description: 'Heavy armored cruiser with twin engines.', price: 800, icon: '🛡️' },
+  { id: 'phoenix', kind: 'body', name: 'Phoenix', description: 'Feathered wings that flare when thrusting.', price: 1500, icon: '🔥' },
 
   // Colors (hull glow and laser colors)
   { id: 'cyan', kind: 'color', name: 'Cyan', description: 'Cool neon cyan.', price: 0, hex: '#22e4ff' },
@@ -55,6 +57,11 @@ export const CATALOG: CatalogItem[] = [
 
 export function getItem(id: string): CatalogItem | undefined {
   return CATALOG.find((i) => i.id === id);
+}
+
+/** Glyph for a ship body (falls back to a generic rocket). */
+export function bodyIcon(id: string): string {
+  return getItem(id)?.icon ?? '🚀';
 }
 
 export function defaultLoadout(body = 'arrow'): ShipLoadout {

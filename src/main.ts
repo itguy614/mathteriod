@@ -9,7 +9,6 @@ import { LearningEngine, isSkillId, weakestFacts } from './learning/index';
 import { LocalProfileStore, resetProfileProgress, stardustForLevel, stardustForPractice } from './store';
 import { Router } from './ui/router';
 import { hangarCenter } from './ui/layout';
-import { titleScreen } from './ui/screens/title';
 import { profilePickerScreen } from './ui/screens/profiles';
 import { newPilotScreen } from './ui/screens/newPilot';
 import { homeScreen } from './ui/screens/home';
@@ -100,25 +99,15 @@ function requireProfile(): Profile {
 // Screens / routes
 // ---------------------------------------------------------------------------
 
-function goTitle(): void {
-  game.showAttract();
-  router.show(titleScreen({ onPlay: () => void goProfiles() }));
-}
-
 async function goProfiles(): Promise<void> {
   game.showAttract();
   const profiles = await store.list();
-  if (profiles.length === 0) {
-    goNewPilot();
-    return;
-  }
   router.show(
     profilePickerScreen({
       profiles,
       lastPilotId: readLastPilot(),
       onPick: selectProfile,
       onNew: goNewPilot,
-      onBack: goTitle,
     }),
   );
 }
@@ -128,19 +117,14 @@ function goNewPilot(): void {
     newPilotScreen({
       game,
       audio,
-      onCreate: async (name, avatar, body) => {
-        const p = await store.create(name, avatar, body);
+      onCreate: async (name, body) => {
+        const p = await store.create(name, body);
         audio.play('purchase');
         selectProfile(p);
       },
-      onBack: () => void goProfilesOrTitle(),
+      onBack: () => void goProfiles(),
     }),
   );
-}
-
-async function goProfilesOrTitle(): Promise<void> {
-  if ((await store.list()).length) await goProfiles();
-  else goTitle();
 }
 
 function selectProfile(p: Profile): void {
@@ -215,7 +199,7 @@ function goSettings(): void {
         await store.delete(id);
         if (readLastPilot() === id) writeLastPilot(null);
         profile = null;
-        await goProfilesOrTitle();
+        await goProfiles();
       },
       onBack: goHome,
     }),
@@ -443,4 +427,4 @@ document.addEventListener('visibilitychange', () => {
 });
 window.addEventListener('blur', () => pauseGame());
 
-goTitle();
+void goProfiles();

@@ -217,8 +217,8 @@ export interface Settings {
 export interface Profile {
   id: string;
   name: string;
-  /** Avatar emoji or id chosen at creation. */
-  avatar: string;
+  /** Legacy: emoji picked at creation by older versions. No longer set or shown. */
+  avatar?: string;
   createdAt: number;
   learning: LearningState;
   stardust: number;

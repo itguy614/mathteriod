@@ -32,7 +32,6 @@ function profile(stardust: number): Profile {
   return {
     id: 'p',
     name: 'Test',
-    avatar: '🚀',
     createdAt: 0,
     learning: { stageIndex: 0, levelInStage: 0, clearedInStage: 0, levelsCleared: 0, consecutiveFailures: 0, factStats: {} },
     stardust,

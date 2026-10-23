@@ -1,4 +1,5 @@
 import type { Profile } from '../../types';
+import { bodyIcon } from '../../catalog';
 import { h, stardustBadge } from '../dom';
 import type { Screen } from '../router';
 
@@ -37,7 +38,7 @@ export function homeScreen(opts: {
       h(
         'button',
         { class: 'pilot-chip', onclick: opts.onSwitchPilot, 'aria-label': `${p.name}. Switch pilot` },
-        h('span', { class: 'pilot-avatar', 'aria-hidden': 'true' }, p.avatar),
+        h('span', { class: 'pilot-avatar', 'aria-hidden': 'true' }, bodyIcon(p.loadout.body)),
         h('span', { class: 'pilot-text' }, h('span', { class: 'pilot-name' }, p.name), h('span', { class: 'pilot-switch' }, '⇄ switch')),
       ),
       h('span', { class: 'top-right' }, stardustBadge(p.stardust, 'big'), h('button', { class: 'btn btn-icon btn-ghost', onclick: opts.onSettings, 'aria-label': 'Settings' }, '⚙️')),
