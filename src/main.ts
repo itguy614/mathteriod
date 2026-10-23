@@ -5,7 +5,7 @@
 import type { Fact, LevelConfig, LevelResult, Operation, Profile, Question, Settings } from './types';
 import { AudioEngine, speechSupported } from './audio';
 import { createGame } from './game/index';
-import { LearningEngine, NEEDS_PRACTICE, isSkillId, weakestFacts } from './learning/index';
+import { LearningEngine, NEEDS_PRACTICE, STAGES, isSkillId, weakestFacts } from './learning/index';
 import { LocalProfileStore, resetProfileProgress, stardustForLevel, stardustForPractice } from './store';
 import { Router } from './ui/router';
 import { hangarCenter } from './ui/layout';
@@ -19,6 +19,7 @@ import { pauseScreen } from './ui/screens/pause';
 import { resultsScreen } from './ui/screens/results';
 import { settingsScreen } from './ui/screens/settings';
 import { practiceScreen } from './ui/screens/practice';
+import { mapScreen } from './ui/screens/map';
 
 const LAST_PILOT_KEY = 'mathteroid:lastPilot';
 
@@ -147,8 +148,23 @@ function goHome(): void {
       onLaunch: launchLevel,
       onPractice: goPractice,
       onHangar: goHangar,
+      onMap: goMap,
       onSettings: goSettings,
       onSwitchPilot: () => void goProfiles(),
+    }),
+  );
+}
+
+function goMap(): void {
+  const p = requireProfile();
+  const engine = new LearningEngine(p.learning);
+  game.showAttract();
+  router.show(
+    mapScreen({
+      stages: STAGES,
+      stageIndex: engine.getState().stageIndex,
+      progress: engine.stageProgress(),
+      onBack: goHome,
     }),
   );
 }

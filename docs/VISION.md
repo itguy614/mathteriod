@@ -102,6 +102,12 @@ For example, they can drill the ×7 table they're learning at school.
 - **Rewards:** earns Stardust (slightly less than Missions). Scores don't go on leaderboards,
   since players choose their own difficulty.
 
+## Journey
+
+- **Galaxy map** (from Base): every mission stage is a planet on a path, grouped by operation.
+  Done planets are lit with ✓, the current one pulses with its mastery %, later ones are locked;
+  review stages show the 👾 boss marker. States use icons and words, never color alone.
+
 ## Rewards and customization
 
 - Everyone starts at the same level and **chooses a base ship**.

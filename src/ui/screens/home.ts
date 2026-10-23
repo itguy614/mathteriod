@@ -10,6 +10,7 @@ export function homeScreen(opts: {
   onLaunch(): void;
   onPractice(): void;
   onHangar(): void;
+  onMap(): void;
   onSettings(): void;
   onSwitchPilot(): void;
 }): Screen {
@@ -61,7 +62,12 @@ export function homeScreen(opts: {
         p.bestScore > 0 ? h('div', { class: 'best' }, h('span', { 'aria-hidden': 'true' }, '🏆'), ` Best ${p.bestScore.toLocaleString()}`) : null,
       ),
       h('div', { class: 'launch-row' }, launch, practice),
-      h('button', { class: 'btn btn-secondary btn-big', onclick: opts.onHangar }, h('span', { 'aria-hidden': 'true' }, '🛠️'), ' Hangar'),
+      h(
+        'div',
+        { class: 'nav-row' },
+        h('button', { class: 'btn btn-secondary btn-big', onclick: opts.onHangar }, h('span', { 'aria-hidden': 'true' }, '🛠️'), ' Hangar'),
+        h('button', { class: 'btn btn-secondary btn-big', onclick: opts.onMap }, h('span', { 'aria-hidden': 'true' }, '🗺️'), ' Map'),
+      ),
     ),
   );
   const onKey = (e: KeyboardEvent) => {
