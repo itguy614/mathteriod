@@ -21,10 +21,12 @@ Promotion comes only when a child has actually mastered a set of facts.
   - Keyboard: arrows/WASD + space.
   - Touch: virtual joystick + fire button (auto-detected).
 - **Win a level:** Clear every asteroid from the field.
-- **Wrong answer:** Shooting a wrong asteroid is not a failure. It **splits into two smaller
-  asteroids**, so the field gets more crowded. The fact is recorded as missed for adaptive
-  practice.
-- **Lose a level:** Only when the ship **collides with asteroids three times**.
+- **Hull:** Three ship icons, each split into thirds. A collision costs a whole ship; a wrong
+  answer costs a third. Three correct answers in a row repair a third (never past three ships).
+- **Wrong answer:** Shooting a wrong asteroid **splits it into two smaller asteroids**, so the
+  field gets more crowded, and chips the hull. Spraying shots at every rock no longer clears a
+  level for free. The fact is recorded as missed for adaptive practice.
+- **Lose a level:** When the hull runs out (collisions and wrong answers combined).
 - **On failure:** Encouraging message and an instant retry. Correct answers still count toward
   mastery stats. After 2–3 consecutive failures, the game quietly eases off (slower asteroids,
   fewer splits).

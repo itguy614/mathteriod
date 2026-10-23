@@ -77,6 +77,22 @@
   opacity: 0.55;
   transform: scale(0.82);
 }
+.mt-hud-life--part { position: relative; }
+.mt-hud-life-base,
+.mt-hud-life-fill { position: absolute; inset: 0; display: flex; }
+.mt-hud-life-base { color: #3b4258; opacity: 0.55; filter: none; }
+.mt-hud-hull--damage { animation: mt-hull-damage 0.45s ease-out; }
+.mt-hud-hull--repair { animation: mt-hull-repair 0.6s ease-out; }
+@keyframes mt-hull-damage {
+  0% { box-shadow: 0 0 0 2px rgba(255, 80, 110, 0.9), 0 0 18px rgba(255, 80, 110, 0.8); }
+  30% { transform: translateX(-4px); }
+  60% { transform: translateX(4px); }
+  100% { box-shadow: none; transform: none; }
+}
+@keyframes mt-hull-repair {
+  0% { box-shadow: 0 0 0 2px rgba(110, 255, 160, 0.9), 0 0 22px rgba(110, 255, 160, 0.8); transform: scale(1.08); }
+  100% { box-shadow: none; transform: none; }
+}
 .mt-hud-shield { color: #9fd2ff; margin-left: 4px; }
 .mt-hud-shield--used { color: #3b4258; filter: none; opacity: 0.45; }
 
@@ -486,5 +502,7 @@
   .mt-flash--on,
   .mt-hud-banner--new,
   .mt-hud-banner--correct,
-  .mt-hud-banner--wrong { animation: none; }
+  .mt-hud-banner--wrong,
+  .mt-hud-hull--damage,
+  .mt-hud-hull--repair { animation: none; }
 }

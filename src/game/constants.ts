@@ -130,7 +130,23 @@ export const ENTRY = {
 } as const;
 
 /**
- * Gentle laser magnetism toward any numbered asteroid (never only the answer).
+ * Hull damage, tracked in segments (thirds of a ship icon). A collision costs a
+ * whole ship, a wrong answer one segment; a streak of correct answers repairs one.
+ */
+export const HULL = {
+  segmentsPerShip: 3,
+  collisionDamage: 3,
+  wrongDamage: 1,
+  /** Correct answers in a row that repair one segment. */
+  repairStreak: 3,
+  /** A held-fire burst into one wrong rock only costs one segment. */
+  wrongGraceSec: 0.5,
+} as const;
+
+/**
+ * Gentle laser magnetism (never only toward the answer). Each bolt locks at fire
+ * time onto the rock its aim line passes closest to, and only curves toward that
+ * one, so a nearby rock off to the side can't steal a well-aimed shot.
  * Lasers don't wrap, so only direct on-screen positions count.
  */
 export const AIM_ASSIST = {

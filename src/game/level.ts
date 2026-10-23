@@ -13,7 +13,7 @@ import { HITS_ALLOWED } from '../catalog';
 import type { Asteroid, AsteroidField } from './asteroids';
 import { circlesOverlap, segmentHitsCircle } from './collision';
 import { AimGuide } from './aimGuide';
-import { AIM_ASSIST, ASTEROID, ENTRY, HINT, LASER, LEVEL, SHIP, TAP_TARGET, type AsteroidSize } from './constants';
+import { AIM_ASSIST, ASTEROID, ENTRY, HINT, HULL, LASER, LEVEL, SHIP, TAP_TARGET, type AsteroidSize } from './constants';
 import type { Effects } from './effects';
 import type { Graphics } from './graphics';
 import type { HintKind, HintPart, Hud, ShieldState } from './hud';
@@ -40,6 +40,8 @@ const EQ_LABEL_MIN_PX = 36;
 const EQ_LABEL_OFFSET = 6.2;
 
 const ORIGIN = new THREE.Vector2();
+/** Hull capacity in segments (HULL.segmentsPerShip per ship icon). */
+const HULL_MAX = HITS_ALLOWED * HULL.segmentsPerShip;
 /** Scratch list for Asteroid.images(). */
 const IMAGES: THREE.Vector2[] = [];
 
@@ -55,7 +57,7 @@ function randRange(a: number, b: number): number {
 
 /**
  * Classic-mode rules for one level: spawning, questions, hits, splits, ship
- * collisions, shield, scoring and the level-end timeline.
+ * collisions, hull damage and repair, shield, scoring and the level-end timeline.
  */
 export class LevelController {
   readonly ship: Ship;
@@ -63,7 +65,15 @@ export class LevelController {
   private question: Question | null = null;
   private qStart = 0;
   private answers: AnswerEvent[] = [];
+  /** Collisions this level (reported in the result). */
   private hitsTaken = 0;
+  /** Hull damage in segments, 0..HULL_MAX. Collisions and wrong answers add, correct streaks repair. */
+  private damage = 0;
+  /** Correct answers in a row; a wrong answer resets it. */
+  private streak = 0;
+  private wrongGrace = 0;
+  /** Rock each bolt locked onto when fired (aim assist curves only toward it). */
+  private laserTargets = new WeakMap<Laser, Asteroid>();
   private score = 0;
   private shieldState: ShieldState;
   private state: 'playing' | 'ending' = 'playing';
@@ -126,7 +136,7 @@ export class LevelController {
     this.aimGuide = new AimGuide(gfx);
 
     hud.setLevel(config.levelNumber, config.stageName);
-    hud.setHull(0, HITS_ALLOWED, this.shieldState);
+    this.updateHull();
     hud.setScore(0);
     hud.setMessage(null);
     hud.show(true);
@@ -294,7 +304,7 @@ export class LevelController {
         if (input.consumeFirePress()) this.fire(LASER.cooldown);
         else if (this.controls.fire) this.fire(LASER.holdRepeat);
         else if (aligned && this.tapTarget && this.aimError(this.tapTarget) < TAP_TARGET.alignTol) {
-          this.fire(LASER.cooldown);
+          this.fire(LASER.cooldown, this.tapTarget);
           this.tapTarget = null;
         }
       }
@@ -303,6 +313,7 @@ export class LevelController {
       if (this.respawnT <= 0) this.respawn();
     }
     field.update(dt);
+    this.wrongGrace = Math.max(0, this.wrongGrace - dt);
     this.updateInvulnerability(dt);
     this.ship.updateVisual(dt, time, particles);
 
@@ -411,35 +422,61 @@ export class LevelController {
     return true;
   }
 
-  /** Gentle magnetism: lasers curve toward the nearest numbered rock inside a narrow cone. */
+  /** Gentle magnetism: each bolt curves toward the rock it locked onto, while it stays inside a narrow cone. */
   private steerLasers(dt: number): void {
-    const { lasers, field } = this.ctx;
-    for (const l of lasers.list) {
+    for (const l of this.ctx.lasers.list) {
       if (l.cosmetic) continue;
-      const heading = Math.atan2(l.vel.y, l.vel.x);
-      let bestDiff = 0;
-      let bestD = Infinity;
-      for (const a of field.list) {
-        if (a.value === null || !a.active) continue;
-        const dx = a.pos.x - l.pos.x;
-        const dy = a.pos.y - l.pos.y;
-        const d = Math.hypot(dx, dy);
-        if (d > AIM_ASSIST.range || d >= bestD) continue;
-        const diff = wrapAngle(Math.atan2(dy, dx) - heading);
-        if (Math.abs(diff) > AIM_ASSIST.cone) continue;
-        bestD = d;
-        bestDiff = diff;
-      }
-      if (bestD === Infinity) continue;
-      const step = THREE.MathUtils.clamp(bestDiff, -AIM_ASSIST.turnRate * dt, AIM_ASSIST.turnRate * dt);
+      const a = this.laserTargets.get(l);
+      if (!a || !a.alive || a.value === null || !a.active) continue;
+      const dx = a.pos.x - l.pos.x;
+      const dy = a.pos.y - l.pos.y;
+      const diff = wrapAngle(Math.atan2(dy, dx) - Math.atan2(l.vel.y, l.vel.x));
+      // once it's beside or behind the bolt, the shot has missed: let it fly on
+      if (Math.abs(diff) > AIM_ASSIST.cone) continue;
+      const step = THREE.MathUtils.clamp(diff, -AIM_ASSIST.turnRate * dt, AIM_ASSIST.turnRate * dt);
       l.vel.rotateAround(ORIGIN, step);
     }
   }
 
-  private fire(cooldown: number): void {
+  /**
+   * The rock a freshly fired bolt is aimed at: the one its straight path passes
+   * closest to (by how far it would miss the rock's edge, with the rock's motion
+   * led), inside the assist cone and range. Bolts already on course for several
+   * rocks pick the nearest, since that's the one they'd hit first.
+   */
+  private pickLaserTarget(l: Laser): Asteroid | null {
+    const sp = l.vel.length() || 1;
+    const fx = l.vel.x / sp;
+    const fy = l.vel.y / sp;
+    let best: Asteroid | null = null;
+    let bestMiss = Infinity;
+    let bestAlong = Infinity;
+    for (const a of this.ctx.field.list) {
+      if (a.value === null || !a.active) continue;
+      const d0 = Math.hypot(a.pos.x - l.pos.x, a.pos.y - l.pos.y);
+      if (d0 > AIM_ASSIST.range) continue;
+      const t = d0 / sp;
+      const dx = a.pos.x + a.vel.x * t - l.pos.x;
+      const dy = a.pos.y + a.vel.y * t - l.pos.y;
+      const along = dx * fx + dy * fy;
+      if (along <= 0) continue;
+      if (Math.abs(Math.atan2(dx * fy - dy * fx, along)) > AIM_ASSIST.cone) continue;
+      const miss = Math.max(0, Math.abs(dx * fy - dy * fx) - a.hitRadius - LASER.radius);
+      if (miss < bestMiss || (miss === bestMiss && along < bestAlong)) {
+        best = a;
+        bestMiss = miss;
+        bestAlong = along;
+      }
+    }
+    return best;
+  }
+
+  private fire(cooldown: number, target: Asteroid | null = null): void {
     const { lasers, audio } = this.ctx;
     const m = this.ship.muzzleWorld(this.tmpV);
-    lasers.fire(m.x, m.y, this.ship.angle, this.ship.vel.x * 0.5, this.ship.vel.y * 0.5);
+    const l = lasers.fire(m.x, m.y, this.ship.angle, this.ship.vel.x * 0.5, this.ship.vel.y * 0.5);
+    const lock = target ?? this.pickLaserTarget(l);
+    if (lock) this.laserTargets.set(l, lock);
     this.fireCd = cooldown;
     audio.play('laser');
     this.hintUsed('fire');
@@ -524,6 +561,8 @@ export class LevelController {
       effects.popIcon('check', a.pos.x, a.pos.y);
       if (responseMs < LEVEL.speedyMs) effects.popSpeedy(bonus, a.pos.x, a.pos.y);
       effects.flash();
+      this.streak++;
+      if (this.streak % HULL.repairStreak === 0 && this.damage > 0) this.repairHull();
       field.remove(a);
       if (field.liveValues().length > 0) this.nextQuestion();
       else this.endLevel('cleared');
@@ -534,6 +573,12 @@ export class LevelController {
     audio.play('wrong');
     hud.react('wrong');
     effects.popIcon('cross', a.pos.x, a.pos.y);
+    this.streak = 0;
+    if (this.wrongGrace <= 0) {
+      this.wrongGrace = HULL.wrongGraceSec;
+      this.wrongAnswerDamage();
+      if (this.state !== 'playing') return;
+    }
     const dirX = l.vel.x / (l.vel.length() || 1);
     const dirY = l.vel.y / (l.vel.length() || 1);
     if (a.size > 1) {
@@ -643,7 +688,7 @@ export class LevelController {
 
   private absorbWithShield(a: Asteroid): void {
     const s = this.ship;
-    const { audio, effects, hud } = this.ctx;
+    const { audio, effects } = this.ctx;
     s.popShield();
     s.invuln = 1.0;
     const nx = a.pos.x - s.pos.x;
@@ -654,12 +699,12 @@ export class LevelController {
     effects.shieldPop(s.pos.x, s.pos.y, s.color.color);
     this.ctx.gfx.shake(0.5, 0.2);
     this.shieldState = 'used';
-    hud.setHull(this.hitsTaken, HITS_ALLOWED, this.shieldState);
+    this.updateHull();
   }
 
   private shipHit(): void {
     const s = this.ship;
-    const { audio, effects, hud, gfx } = this.ctx;
+    const { audio, effects, gfx } = this.ctx;
     this.hitsTaken++;
     audio.play('shipHit');
     gfx.shake(1.3, 0.45);
@@ -667,10 +712,42 @@ export class LevelController {
     s.alive = false;
     s.thrustAmt = 0;
     s.vel.set(0, 0);
-    hud.setHull(this.hitsTaken, HITS_ALLOWED, this.shieldState);
+    this.damage = Math.min(HULL_MAX, this.damage + HULL.collisionDamage);
+    this.updateHull('damage');
     this.safeCall(() => this.callbacks.onShipHit?.(this.hitsTaken, HITS_ALLOWED));
-    if (this.hitsTaken >= HITS_ALLOWED) this.endLevel('failed');
+    if (this.damage >= HULL_MAX) this.endLevel('failed');
     else this.respawnT = SHIP.respawnDelay;
+  }
+
+  /** A wrong answer chips one segment off the hull; an empty hull destroys the ship. */
+  private wrongAnswerDamage(): void {
+    const s = this.ship;
+    const { audio, effects, gfx } = this.ctx;
+    this.damage = Math.min(HULL_MAX, this.damage + HULL.wrongDamage);
+    this.updateHull('damage');
+    if (this.damage < HULL_MAX) {
+      gfx.shake(0.45, 0.18);
+      return;
+    }
+    if (s.alive) {
+      audio.play('shipHit');
+      gfx.shake(1.3, 0.45);
+      effects.shipExplosion(s.pos.x, s.pos.y, s.color.color);
+      s.alive = false;
+      s.thrustAmt = 0;
+      s.vel.set(0, 0);
+    }
+    this.endLevel('failed');
+  }
+
+  private repairHull(): void {
+    this.damage = Math.max(0, this.damage - 1);
+    this.ctx.audio.play('shieldHit');
+    this.updateHull('repair');
+  }
+
+  private updateHull(pulse?: 'damage' | 'repair'): void {
+    this.ctx.hud.setHull(HULL_MAX - this.damage, HITS_ALLOWED, HULL.segmentsPerShip, this.shieldState, pulse);
   }
 
   private respawn(): void {

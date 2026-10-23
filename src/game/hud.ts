@@ -168,15 +168,31 @@ export class Hud {
     b.classList.add(cls);
   }
 
-  setHull(hitsTaken: number, allowed: number, shield: ShieldState): void {
+  /**
+   * Hull as ship icons, each split into `segments` that drain from the top.
+   * `pulse` briefly flashes the hull red (damage) or green (repair).
+   */
+  setHull(hp: number, ships: number, segments: number, shield: ShieldState, pulse?: 'damage' | 'repair'): void {
     let html = '';
-    for (let i = 0; i < allowed; i++) {
-      const lost = i >= allowed - hitsTaken;
-      html += `<span class="mt-hud-life${lost ? ' mt-hud-life--lost' : ''}">${SHIP_SVG}</span>`;
+    for (let i = 0; i < ships; i++) {
+      const fill = Math.min(segments, Math.max(0, hp - i * segments)) / segments;
+      if (fill >= 1) html += `<span class="mt-hud-life">${SHIP_SVG}</span>`;
+      else if (fill <= 0) html += `<span class="mt-hud-life mt-hud-life--lost">${SHIP_SVG}</span>`;
+      else {
+        const clip = `clip-path:inset(${((1 - fill) * 100).toFixed(1)}% 0 0 0)`;
+        html += `<span class="mt-hud-life mt-hud-life--part"><span class="mt-hud-life-base">${SHIP_SVG}</span><span class="mt-hud-life-fill" style="${clip}">${SHIP_SVG}</span></span>`;
+      }
     }
     if (shield !== 'none') html += `<span class="mt-hud-shield${shield === 'used' ? ' mt-hud-shield--used' : ''}">${SHIELD_SVG}</span>`;
     this.hull.innerHTML = html;
-    this.hull.setAttribute('aria-label', `Ship hull: ${allowed - hitsTaken} of ${allowed}${shield === 'up' ? ', shield ready' : ''}`);
+    const left = Math.round((hp / segments) * 10) / 10;
+    this.hull.setAttribute('aria-label', `Ship hull: ${left} of ${ships}${shield === 'up' ? ', shield ready' : ''}`);
+    if (pulse) {
+      const h = this.hull;
+      h.classList.remove('mt-hud-hull--damage', 'mt-hud-hull--repair');
+      void h.offsetWidth;
+      h.classList.add(`mt-hud-hull--${pulse}`);
+    }
   }
 
   setScore(score: number): void {
