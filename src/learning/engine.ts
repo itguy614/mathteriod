@@ -53,6 +53,12 @@ export const DIFFICULTY = {
   easeAfterFailures: 2,
   /** Every Nth mission level in a stage has a Reverse middle wave (never an eased one). */
   reverseEvery: 2,
+  /**
+   * Reverse waves: at most this many rocks (a pair sharing the target plus one),
+   * at this fraction of the level's speed. Playtest: full-size Reverse waves were too hard.
+   */
+  reverseAsteroids: 3,
+  reverseSpeedFactor: 0.75,
 };
 
 /**
@@ -598,6 +604,12 @@ export class LearningEngine {
       levelNumber: this.state.levelsCleared + 1,
       waves,
       reverse: reverse ? new ReverseFactProvider(stage, this.state.factStats, this.rng) : undefined,
+      reversePace: reverse
+        ? {
+            asteroids: Math.min(pace.count, DIFFICULTY.reverseAsteroids),
+            speed: Math.round(pace.speed * DIFFICULTY.reverseSpeedFactor * 10) / 10,
+          }
+        : undefined,
       initialAsteroids: pace.count,
       asteroidSpeed: pace.speed,
       maxAsteroids: eased ? DIFFICULTY.easedMaxAsteroids : DIFFICULTY.maxAsteroids,

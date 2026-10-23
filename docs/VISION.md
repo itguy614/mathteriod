@@ -43,6 +43,15 @@ Promotion comes only when a child has actually mastered a set of facts.
 - **Pressure ramp:** Early levels have few, slow asteroids and no timer. Asteroid count and
   speed increase gradually within a stage.
 
+- **Power-ups:** Every 5 correct answers in a row drops a crystal (fly into it or shoot it):
+  🐢 Slow-mo (rocks drift at under half speed), 💥 Big blaster (fatter bolts), 🧲 Magnet
+  (stronger aim assist). Each lasts 8 seconds. None of them ever picks the answer.
+- **Bonus UFO:** Some Classic waves get a UFO that crosses the screen once, showing a number:
+  sometimes the current answer, sometimes a near miss. Shoot it when it's right for a score and
+  Stardust bonus (it counts as answering the question); shoot it when it's wrong and it's a
+  normal wrong answer; ignore it at no cost.
+- **Reverse waves** are smaller and slower (3 rocks, 75% speed): reading equations takes longer.
+
 ### Equation modes (mixed across levels for variety)
 
 | Mode | Ship shows | Shoot |

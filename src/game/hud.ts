@@ -51,6 +51,7 @@ export class Hud {
   private hull: HTMLDivElement;
   private lives: HTMLSpanElement;
   private streakEl: HTMLSpanElement;
+  private powerEl: HTMLSpanElement;
   private score: HTMLSpanElement;
   private level: HTMLDivElement;
   private pauseBtn: HTMLButtonElement;
@@ -63,7 +64,7 @@ export class Hud {
     const root = document.createElement('div');
     root.className = 'mt-hud';
     root.innerHTML = `
-      <div class="mt-hud-hull"><span class="mt-hud-lives" role="img" aria-label="Ship hull"></span><span class="mt-hud-streak" role="img"></span></div>
+      <div class="mt-hud-hull"><span class="mt-hud-lives" role="img" aria-label="Ship hull"></span><span class="mt-hud-streak" role="img"></span><span class="mt-hud-power" role="img"></span></div>
       <div class="mt-hud-banner" role="status" aria-live="polite"><span class="mt-hud-eq"></span></div>
       <div class="mt-hud-right">
         <div class="mt-hud-score"><span class="mt-hud-score-label">Score</span> <span class="mt-hud-score-val">0</span></div>
@@ -87,6 +88,7 @@ export class Hud {
     this.hull = q('.mt-hud-hull');
     this.lives = q('.mt-hud-lives');
     this.streakEl = q('.mt-hud-streak');
+    this.powerEl = q('.mt-hud-power');
     this.score = q('.mt-hud-score-val');
     this.level = q('.mt-hud-level');
     this.pauseBtn = q('.mt-hud-pause');
@@ -168,6 +170,26 @@ export class Hud {
   revealAnswer(text: string): void {
     this.eq.textContent = text;
     this.banner.classList.add('mt-hud-banner--on', 'mt-hud-banner--reveal');
+  }
+
+  /** Active power-up beside the streak meter: its icon inside a ring that empties as it runs out. */
+  setPower(icon: string | null, name = '', left = 0): void {
+    const el = this.powerEl;
+    if (icon === null) {
+      if (el.classList.contains('mt-hud-power--on')) {
+        el.classList.remove('mt-hud-power--on');
+        el.textContent = '';
+        el.removeAttribute('aria-label');
+      }
+      return;
+    }
+    if (el.dataset.icon !== icon || !el.classList.contains('mt-hud-power--on')) {
+      el.dataset.icon = icon;
+      el.innerHTML = `<span aria-hidden="true">${icon}</span>`;
+      el.setAttribute('aria-label', `${name} power-up active`);
+      el.classList.add('mt-hud-power--on');
+    }
+    el.style.setProperty('--left', `${Math.round(Math.max(0, Math.min(1, left)) * 360)}deg`);
   }
 
   /**

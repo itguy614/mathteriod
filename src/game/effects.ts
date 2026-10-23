@@ -134,6 +134,25 @@ export class Effects {
     sprite.position.set(cx, cy, 8);
   }
 
+  /** Floating text note ("🐢 Slow-mo!", "🛸 UFO bonus!") that rises and fades; `below` keeps it clear of a ✓ and "Speedy!". */
+  popLabel(text: string, x: number, y: number, below = false): void {
+    const sprite = this.pool.pop() ?? makeLabelSprite(null);
+    const mat = sprite.material as THREE.SpriteMaterial;
+    const { tex, aspect } = this.labels.numberTexture(text);
+    mat.map = tex;
+    mat.needsUpdate = true;
+    mat.opacity = 1;
+    this.gfx.overlay.add(sprite);
+    const size = this.gfx.labelSize(3.2, 32);
+    const hw = (size * aspect) / 2;
+    const cx = THREE.MathUtils.clamp(x, -this.gfx.halfW + hw, this.gfx.halfW - hw);
+    const cy = below
+      ? Math.max(y - size * 2.2, -this.gfx.halfH + size)
+      : Math.min(y + size * 1.4, this.gfx.halfH - size - 110 / this.gfx.pxPerUnit); // stay below the HUD banner
+    this.popups.push({ sprite, age: 0, life: 1.4, size, x: cx, y: cy, aspect, rise: 2.5 });
+    sprite.position.set(cx, cy, 8);
+  }
+
   flash(): void {
     const el = this.flashEl;
     el.classList.remove('mt-flash--on');

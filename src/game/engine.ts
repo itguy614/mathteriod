@@ -262,6 +262,10 @@ export class Engine implements GameEngine {
         this.level.ship.angle = angle;
         return true;
       },
+      /** Bonus state, plus ways to summon a UFO or drop a power-up right away. */
+      bonus: () => this.level?.debugBonus() ?? null,
+      spawnUfo: () => this.level?.debugSpawnUfo() ?? false,
+      dropPowerUp: (kind: 'slow' | 'wide' | 'magnet', x = 0, y = 10) => this.level?.debugDropPowerUp(kind, x, y) ?? false,
     };
   }
 

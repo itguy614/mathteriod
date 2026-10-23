@@ -145,6 +145,39 @@ export const HULL = {
   wrongGraceSec: 0.5,
 } as const;
 
+/** Power-up crystals: every `every` correct answers in a row drops one. */
+export const POWERUP = {
+  every: 5,
+  /** How long a collected power-up lasts. */
+  durationSec: 8,
+  /** How long an uncollected crystal floats before vanishing. */
+  lifeSec: 10,
+  radius: 1.6,
+  drift: 2.5,
+  /** Slow-mo: rocks move at this fraction of their speed. */
+  slowFactor: 0.45,
+  /** Big blaster: bolt scale, and extra hit radius (world units). */
+  wideScale: 1.8,
+  wideHit: 1.4,
+  /** Magnet: multipliers on the aim-assist cone and curve rate. */
+  magnetCone: 1.8,
+  magnetTurn: 2.5,
+} as const;
+
+/** The bonus UFO: a quick yes/no target that crosses once per (some) Classic waves. */
+export const UFO = {
+  /** Chance a Classic wave gets a UFO. */
+  chancePerWave: 0.6,
+  /** Seconds after the wave's rocks arrive before it appears. */
+  delay: [5, 12] as [number, number],
+  crossSec: 6,
+  /** Chance its number is the current answer (otherwise a near miss). */
+  correctChance: 0.6,
+  radius: 2.6,
+  scale: 1.1,
+  bonusScore: 250,
+} as const;
+
 /** Between waves: a short breather, and a free hull repair. */
 export const WAVE = {
   pauseSec: 2,

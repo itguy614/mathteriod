@@ -132,6 +132,8 @@ export interface LevelConfig {
   questions: QuestionProvider;
   /** Present when `waves` includes 'reverse'. */
   reverse?: ReverseProvider;
+  /** Reverse waves are smaller and slower: reading equations takes longer than numbers. */
+  reversePace?: { asteroids: number; speed: number };
 }
 
 // ---------------------------------------------------------------------------
@@ -157,6 +159,8 @@ export interface LevelResult {
   durationMs: number;
   hitsTaken: number;
   score: number;
+  /** Bonus UFOs shot while showing the right answer. */
+  ufoHits?: number;
 }
 
 /** Returned by the learning engine after recording a level. */

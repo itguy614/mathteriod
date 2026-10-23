@@ -5,6 +5,7 @@ import {
   CLEAR_BONUS,
   PRACTICE_MULTIPLIER,
   PROMOTION_BONUS,
+  UFO_BONUS,
   equip,
   isEquipped,
   purchase,
@@ -58,6 +59,12 @@ describe('stardustForLevel', () => {
     const base = stardustForLevel(result('cleared', answers(10, 0)), summary(1));
     const promoted = stardustForLevel(result('cleared', answers(10, 0)), summary(1, true));
     expect(promoted - base).toBe(PROMOTION_BONUS);
+  });
+
+  it('adds a bonus per UFO shot on the right answer', () => {
+    const base = stardustForLevel(result('cleared', answers(10, 0)), summary(1));
+    const ufo = stardustForLevel({ ...result('cleared', answers(10, 0)), ufoHits: 2 }, summary(1));
+    expect(ufo - base).toBe(2 * UFO_BONUS);
   });
 
   it('still rewards effort on failed levels, but less', () => {

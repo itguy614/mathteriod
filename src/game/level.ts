@@ -16,7 +16,8 @@ import { HITS_ALLOWED } from '../catalog';
 import type { Asteroid, AsteroidField } from './asteroids';
 import { circlesOverlap, segmentHitsCircle } from './collision';
 import { AimGuide } from './aimGuide';
-import { AIM_ASSIST, ASTEROID, ENTRY, HINT, HULL, LASER, LEVEL, REVEAL, SHIP, TAP_TARGET, WAVE, type AsteroidSize } from './constants';
+import { AIM_ASSIST, ASTEROID, ENTRY, HINT, HULL, LASER, LEVEL, POWERUP, REVEAL, SHIP, TAP_TARGET, UFO, WAVE, type AsteroidSize } from './constants';
+import { POWER_INFO, POWER_KINDS, PowerUpField, Ufo, type Crystal, type PowerKind } from './bonus';
 import type { Effects } from './effects';
 import type { Graphics } from './graphics';
 import type { HintKind, HintPart, Hud, ShieldState } from './hud';
@@ -93,6 +94,15 @@ export class LevelController {
   private waveIndex = 0;
   /** Breather between waves; the next wave starts when it runs out. */
   private betweenT = 0;
+  private powerups: PowerUpField;
+  /** The collected power-up in effect, and its time left. */
+  private power: { kind: PowerKind; t: number } | null = null;
+  /** Bolts fired with Big blaster active. */
+  private wideLasers = new WeakSet<Laser>();
+  private ufo: Ufo | null = null;
+  /** Countdown to this wave's UFO, or null when the wave has none. */
+  private ufoT: number | null = null;
+  private ufoHits = 0;
   /** Rock each bolt locked onto when fired (aim assist curves only toward it). */
   private laserTargets = new WeakMap<Laser, Asteroid>();
   private score = 0;
@@ -146,6 +156,7 @@ export class LevelController {
     ctx.effects.clear();
 
     this.waves = config.waves.length > 0 ? config.waves : ['classic'];
+    this.powerups = new PowerUpField(gfx, ctx.labels);
     this.ship = new Ship(loadout);
     this.ship.reset(0, 0);
     this.ship.shieldUp = loadout.perks.includes('shield');
@@ -181,6 +192,8 @@ export class LevelController {
     this.waveIndex = i;
     const kind = this.waves[i];
     this.reverse = kind === 'reverse' ? (this.config.reverse ?? null) : null;
+    this.removeUfo();
+    this.ufoT = !this.reverse && Math.random() < UFO.chancePerWave ? randRange(UFO.delay[0], UFO.delay[1]) : null;
     if (this.waves.length > 1) hud.setLevel(this.config.levelNumber, this.config.stageName, { n: i + 1, of: this.waves.length });
     hud.setMessage(null);
     this.spawnInitial();
@@ -216,7 +229,8 @@ export class LevelController {
   }
 
   private baseSpeed(size: AsteroidSize): number {
-    return Math.min(ASTEROID.maxSpeed, Math.max(0, this.config.asteroidSpeed) * ASTEROID.speedMult[size]);
+    const speed = this.reverse && this.config.reversePace ? this.config.reversePace.speed : this.config.asteroidSpeed;
+    return Math.min(ASTEROID.maxSpeed, Math.max(0, speed) * ASTEROID.speedMult[size]);
   }
 
   /**
@@ -226,7 +240,8 @@ export class LevelController {
    */
   private spawnInitial(): void {
     const { gfx, field } = this.ctx;
-    const n = Math.max(0, Math.floor(this.config.initialAsteroids));
+    const pace = this.reverse ? this.config.reversePace : undefined;
+    const n = Math.max(0, Math.floor(pace?.asteroids ?? this.config.initialAsteroids));
     let values: number[] = [];
     let facts: Fact[] | null = null;
     try {
@@ -316,6 +331,7 @@ export class LevelController {
     this.revealT = 0;
     this.setEquationLabel(this.questionText(q));
     this.ctx.hud.setQuestion(this.questionText(q));
+    if (this.ufo) this.ufo.setValue(this.ufoValue(q));
     this.safeCall(() => this.callbacks.onQuestion?.(q));
     this.ctx.audio.speak(q.speech);
   }
@@ -362,10 +378,10 @@ export class LevelController {
    * also make the correct rock pulse. In Reverse mode the fact is the equation
    * on the rock that was hit ("5 × 5 = 25", not 24).
    */
-  private revealFact(q: Question, hit: Asteroid): void {
+  private revealFact(q: Question, hitFact: Fact | null): void {
     this.questionMisses++;
     this.revealT = REVEAL.factSec;
-    const fact = this.reverse ? hit.fact : null;
+    const fact = this.reverse ? hitFact : null;
     const text = fact ? `${fact.text} = ${fact.answer}` : `${q.prompt} = ${q.answer}`;
     this.setEquationLabel(text, true);
     this.ctx.hud.revealAnswer(text);
@@ -453,7 +469,9 @@ export class LevelController {
       this.respawnT -= dt;
       if (this.respawnT <= 0) this.respawn();
     }
-    field.update(dt);
+    // Slow-mo slows the rocks only; the ship and bolts keep full speed
+    field.update(this.power?.kind === 'slow' ? dt * POWERUP.slowFactor : dt);
+    this.updateBonuses(dt);
     if (this.betweenT > 0 && this.state === 'playing') {
       this.betweenT -= dt;
       if (this.betweenT <= 0) this.startWave(this.waveIndex + 1);
@@ -490,6 +508,7 @@ export class LevelController {
           durationMs: this.durationMs,
           hitsTaken: this.hitsTaken,
           score: this.score,
+          ufoHits: this.ufoHits,
         };
       }
     }
@@ -579,8 +598,9 @@ export class LevelController {
       const dy = a.pos.y - l.pos.y;
       const diff = wrapAngle(Math.atan2(dy, dx) - Math.atan2(l.vel.y, l.vel.x));
       // once it's beside or behind the bolt, the shot has missed: let it fly on
-      if (Math.abs(diff) > AIM_ASSIST.cone) continue;
-      const step = THREE.MathUtils.clamp(diff, -AIM_ASSIST.turnRate * dt, AIM_ASSIST.turnRate * dt);
+      if (Math.abs(diff) > this.assistCone()) continue;
+      const rate = AIM_ASSIST.turnRate * (this.power?.kind === 'magnet' ? POWERUP.magnetTurn : 1);
+      const step = THREE.MathUtils.clamp(diff, -rate * dt, rate * dt);
       l.vel.rotateAround(ORIGIN, step);
     }
   }
@@ -607,7 +627,7 @@ export class LevelController {
       const dy = a.pos.y + a.vel.y * t - l.pos.y;
       const along = dx * fx + dy * fy;
       if (along <= 0) continue;
-      if (Math.abs(Math.atan2(dx * fy - dy * fx, along)) > AIM_ASSIST.cone) continue;
+      if (Math.abs(Math.atan2(dx * fy - dy * fx, along)) > this.assistCone()) continue;
       const miss = Math.max(0, Math.abs(dx * fy - dy * fx) - a.hitRadius - LASER.radius);
       if (miss < bestMiss || (miss === bestMiss && along < bestAlong)) {
         best = a;
@@ -618,10 +638,17 @@ export class LevelController {
     return best;
   }
 
+  /** Aim-assist cone (wider with Magnet). */
+  private assistCone(): number {
+    return AIM_ASSIST.cone * (this.power?.kind === 'magnet' ? POWERUP.magnetCone : 1);
+  }
+
   private fire(cooldown: number, target: Asteroid | null = null): void {
     const { lasers, audio } = this.ctx;
     const m = this.ship.muzzleWorld(this.tmpV);
-    const l = lasers.fire(m.x, m.y, this.ship.angle, this.ship.vel.x * 0.5, this.ship.vel.y * 0.5);
+    const wide = this.power?.kind === 'wide';
+    const l = lasers.fire(m.x, m.y, this.ship.angle, this.ship.vel.x * 0.5, this.ship.vel.y * 0.5, wide ? { scale: POWERUP.wideScale } : {});
+    if (wide) this.wideLasers.add(l);
     const lock = target ?? this.pickLaserTarget(l);
     if (lock) this.laserTargets.set(l, lock);
     const tap = this.tapDecision;
@@ -662,6 +689,20 @@ export class LevelController {
     const { lasers, field } = this.ctx;
     for (const l of lasers.list.slice()) {
       if (l.cosmetic) continue;
+      const seg = (x: number, y: number, r: number) => segmentHitsCircle(l.prev.x, l.prev.y, l.pos.x, l.pos.y, x, y, r + LASER.radius);
+      const crystal = this.powerups.list.find((c) => seg(c.pos.x, c.pos.y, POWERUP.radius));
+      if (crystal) {
+        lasers.remove(l);
+        this.collectPowerUp(crystal);
+        continue;
+      }
+      if (this.ufo && this.question && seg(this.ufo.pos.x, this.ufo.pos.y, UFO.radius)) {
+        lasers.remove(l);
+        this.onUfoHit(l);
+        if (this.state !== 'playing') return;
+        continue;
+      }
+      const extra = this.wideLasers.has(l) ? POWERUP.wideHit : 0;
       let hit: Asteroid | null = null;
       for (const a of field.list) {
         // rocks still flying in can't be shot yet: bolts pass through
@@ -669,7 +710,7 @@ export class LevelController {
         const n = a.images(IMAGES);
         for (let i = 0; i < n && !hit; i++) {
           const p = IMAGES[i];
-          if (segmentHitsCircle(l.prev.x, l.prev.y, l.pos.x, l.pos.y, p.x, p.y, a.hitRadius + LASER.radius)) hit = a;
+          if (seg(p.x, p.y, a.hitRadius + extra)) hit = a;
         }
         if (hit) break;
       }
@@ -681,39 +722,23 @@ export class LevelController {
     }
   }
 
+  private recordAnswer(factId: string, correct: boolean, responseMs: number, chosenValue: number): void {
+    const ev: AnswerEvent = { factId, correct, responseMs, chosenValue };
+    this.answers.push(ev);
+    this.safeCall(() => this.callbacks.onAnswer?.(ev));
+  }
+
   private onAsteroidHit(a: Asteroid, l: Laser): void {
     const q = this.question;
     if (!q || a.value === null) return;
-    const { audio, effects, hud, field } = this.ctx;
+    const { field, effects } = this.ctx;
     const responseMs = this.responseMs(l);
     const correct = a.value === q.answer;
     // Reverse mode scores the equation on the rock: shooting 5×5 for 24 is a miss on 5×5
-    const ev: AnswerEvent = { factId: a.fact?.id ?? q.factId, correct, responseMs, chosenValue: a.value };
-    this.answers.push(ev);
-    this.safeCall(() => this.callbacks.onAnswer?.(ev));
+    this.recordAnswer(a.fact?.id ?? q.factId, correct, responseMs, a.value);
 
     if (correct) {
-      const bonus =
-        responseMs <= LEVEL.speedBonusFullMs
-          ? LEVEL.speedBonusMax
-          : Math.max(
-              0,
-              Math.round(
-                LEVEL.speedBonusMax * (1 - (responseMs - LEVEL.speedBonusFullMs) / (LEVEL.speedBonusZeroMs - LEVEL.speedBonusFullMs)),
-              ),
-            );
-      this.score += LEVEL.scoreCorrect + bonus;
-      hud.setScore(this.score);
-      hud.react('correct');
-      audio.play('correct');
-      audio.play('explode');
-      effects.correctBurst(a.pos.x, a.pos.y, a.radius);
-      effects.popIcon('check', a.pos.x, a.pos.y);
-      if (responseMs < LEVEL.speedyMs) effects.popSpeedy(bonus, a.pos.x, a.pos.y);
-      effects.flash();
-      this.streak++;
-      this.ctx.hud.setStreak(this.streak, HULL.repairStreak);
-      if (this.streak % HULL.repairStreak === 0 && this.damage > 0) this.repairHull();
+      this.rewardCorrect(a.pos.x, a.pos.y, a.radius, responseMs, 0);
       field.remove(a);
       const live = field.liveValues();
       if (live.length === 0) this.waveCleared();
@@ -722,19 +747,8 @@ export class LevelController {
       return;
     }
 
-    // wrong
-    audio.play('wrong');
-    hud.react('wrong');
-    effects.popIcon('cross', a.pos.x, a.pos.y);
-    this.streak = 0;
-    hud.setStreak(0, HULL.repairStreak);
-    // a held-fire burst into one rock is one miss (the fact is still showing anyway)
-    if (this.wrongGrace <= 0) {
-      this.wrongGrace = HULL.wrongGraceSec;
-      this.revealFact(q, a);
-      this.wrongAnswerDamage();
-      if (this.state !== 'playing') return;
-    }
+    this.punishWrong(q, a.fact, a.pos.x, a.pos.y);
+    if (this.state !== 'playing') return;
     const dirX = l.vel.x / (l.vel.length() || 1);
     const dirY = l.vel.y / (l.vel.length() || 1);
     if (a.size > 1) {
@@ -747,6 +761,157 @@ export class LevelController {
       this.clampSpeed(a);
       effects.sparks(a.pos.x, a.pos.y, a.rimMat.color);
     }
+  }
+
+  /** Score, effects, streak (hull repair, power-up drops) for a correct answer at (x, y). */
+  private rewardCorrect(x: number, y: number, radius: number, responseMs: number, extraScore: number): void {
+    const { audio, effects, hud } = this.ctx;
+    const bonus =
+      responseMs <= LEVEL.speedBonusFullMs
+        ? LEVEL.speedBonusMax
+        : Math.max(
+            0,
+            Math.round(
+              LEVEL.speedBonusMax * (1 - (responseMs - LEVEL.speedBonusFullMs) / (LEVEL.speedBonusZeroMs - LEVEL.speedBonusFullMs)),
+            ),
+          );
+    this.score += LEVEL.scoreCorrect + bonus + extraScore;
+    hud.setScore(this.score);
+    hud.react('correct');
+    audio.play('correct');
+    audio.play('explode');
+    effects.correctBurst(x, y, radius);
+    effects.popIcon('check', x, y);
+    if (responseMs < LEVEL.speedyMs) effects.popSpeedy(bonus, x, y);
+    effects.flash();
+    this.streak++;
+    hud.setStreak(this.streak, HULL.repairStreak);
+    if (this.streak % HULL.repairStreak === 0 && this.damage > 0) this.repairHull();
+    if (this.streak % POWERUP.every === 0) this.dropPowerUp(x, y);
+  }
+
+  /** A wrong answer: ✗, streak reset, and (once per burst) the fact reveal and hull damage. */
+  private punishWrong(q: Question, hitFact: Fact | null, x: number, y: number): void {
+    const { audio, effects, hud } = this.ctx;
+    audio.play('wrong');
+    hud.react('wrong');
+    effects.popIcon('cross', x, y);
+    this.streak = 0;
+    hud.setStreak(0, HULL.repairStreak);
+    // a held-fire burst into one rock is one miss (the fact is still showing anyway)
+    if (this.wrongGrace <= 0) {
+      this.wrongGrace = HULL.wrongGraceSec;
+      this.revealFact(q, hitFact);
+      this.wrongAnswerDamage();
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Power-ups and the bonus UFO
+
+  private dropPowerUp(x: number, y: number): void {
+    const kinds = POWER_KINDS.filter((k) => k !== this.power?.kind);
+    this.powerups.spawn(kinds[Math.floor(Math.random() * kinds.length)], x, y);
+  }
+
+  private collectPowerUp(c: Crystal): void {
+    const { audio, effects, hud } = this.ctx;
+    this.powerups.remove(c);
+    this.power = { kind: c.kind, t: POWERUP.durationSec };
+    audio.play('shieldHit');
+    effects.popLabel(`${POWER_INFO[c.kind].icon} ${POWER_INFO[c.kind].name}!`, c.pos.x, c.pos.y);
+    effects.sparks(c.pos.x, c.pos.y, new THREE.Color(POWER_INFO[c.kind].color));
+    hud.setPower(POWER_INFO[c.kind].icon, POWER_INFO[c.kind].name, 1);
+  }
+
+  private updateBonuses(dt: number): void {
+    const { audio, hud } = this.ctx;
+    this.powerups.update(dt);
+    const s = this.ship;
+    if (s.alive) {
+      for (const c of this.powerups.list.slice()) {
+        if (circlesOverlap(s.pos.x, s.pos.y, SHIP.radius, c.pos.x, c.pos.y, POWERUP.radius)) this.collectPowerUp(c);
+      }
+    }
+    if (this.power) {
+      this.power.t -= dt;
+      if (this.power.t <= 0) {
+        this.power = null;
+        hud.setPower(null);
+      } else hud.setPower(POWER_INFO[this.power.kind].icon, POWER_INFO[this.power.kind].name, this.power.t / POWERUP.durationSec);
+    }
+    // the UFO waits for the wave's rocks to arrive, and only visits Classic waves
+    const canFly = this.state === 'playing' && this.question !== null && !this.reverse && !this.ctx.field.entering;
+    if (this.ufoT !== null && canFly) {
+      this.ufoT -= dt;
+      if (this.ufoT <= 0) {
+        this.ufoT = null;
+        const y = randRange(-0.35, 0.45) * this.ctx.gfx.halfH;
+        this.ufo = new Ufo(this.ctx.gfx, this.ctx.labels, Math.random() < 0.5, y);
+        this.ufo.setValue(this.ufoValue(this.question!));
+        audio.play('shieldHit');
+      }
+    }
+    if (this.ufo && (!this.ufo.update(dt) || this.state !== 'playing' || this.reverse)) this.removeUfo();
+  }
+
+  /** The UFO's number: the current answer, or a plausible near miss. */
+  private ufoValue(q: Question): number {
+    if (Math.random() < UFO.correctChance) return q.answer;
+    try {
+      const v = this.config.questions.splitValue(q, this.ctx.field.liveValues());
+      if (v !== q.answer) return v;
+    } catch (err) {
+      console.error('[game] splitValue failed', err);
+    }
+    return q.answer + (Math.random() < 0.5 && q.answer > 1 ? -1 : 1);
+  }
+
+  private onUfoHit(l: Laser): void {
+    const ufo = this.ufo;
+    const q = this.question;
+    if (!ufo || !q) return;
+    const { effects, audio } = this.ctx;
+    const { x, y } = ufo.pos;
+    const correct = ufo.value === q.answer;
+    this.recordAnswer(q.factId, correct, this.responseMs(l), ufo.value);
+    this.removeUfo();
+    effects.shipExplosion(x, y, new THREE.Color(0x7dff9b));
+    if (correct) {
+      this.ufoHits++;
+      this.rewardCorrect(x, y, UFO.radius, this.responseMs(l), UFO.bonusScore);
+      audio.play('purchase');
+      effects.popLabel('🛸 UFO bonus!', x, y, true);
+      // the rock carrying this answer stays; a new question follows
+      this.nextQuestion();
+    } else this.punishWrong(q, null, x, y);
+  }
+
+  /** Dev/test hooks (see GameEngineImpl.debug()). */
+  debugBonus() {
+    return {
+      ufo: this.ufo ? { value: this.ufo.value, x: this.ufo.pos.x, y: this.ufo.pos.y } : null,
+      ufoT: this.ufoT,
+      crystals: this.powerups.list.map((c) => ({ kind: c.kind, x: c.pos.x, y: c.pos.y })),
+      power: this.power ? { ...this.power } : null,
+      streak: this.streak,
+    };
+  }
+
+  debugSpawnUfo(): boolean {
+    if (!this.question || this.reverse) return false;
+    this.ufoT = 0.01;
+    return true;
+  }
+
+  debugDropPowerUp(kind: PowerKind, x: number, y: number): boolean {
+    this.powerups.spawn(kind, x, y);
+    return true;
+  }
+
+  private removeUfo(): void {
+    this.ufo?.dispose();
+    this.ufo = null;
   }
 
   private split(a: Asteroid, q: Question, dirX: number, dirY: number): void {
@@ -1019,6 +1184,10 @@ export class LevelController {
     this.setEquationLabel(null);
     hud.setQuestion(null);
     hud.hideHint();
+    this.removeUfo();
+    this.powerups.clear();
+    this.power = null;
+    hud.setPower(null);
     this.hintKind = null;
     if (outcome === 'cleared') {
       audio.play('levelClear');
@@ -1036,6 +1205,9 @@ export class LevelController {
     this.disposed = true;
     this.ship.dispose();
     this.aimGuide.dispose();
+    this.removeUfo();
+    this.powerups.dispose();
+    this.ctx.hud.setPower(null);
     this.ctx.hud.hideHint();
     if (this.eqTex) this.eqTex.dispose();
     (this.eqLabel.material as THREE.SpriteMaterial).dispose();

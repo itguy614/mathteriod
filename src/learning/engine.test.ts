@@ -457,6 +457,8 @@ describe('reverse mode', () => {
     ]);
     const withRev = new LearningEngine(stateAt(mulStage, { levelInStage: 1 }), seeded(1)).buildLevel();
     expect(withRev.reverse).toBeDefined();
+    expect(withRev.reversePace!.asteroids).toBeLessThanOrEqual(DIFFICULTY.reverseAsteroids);
+    expect(withRev.reversePace!.speed).toBeLessThan(withRev.asteroidSpeed);
     const eased = new LearningEngine(stateAt(mulStage, { levelInStage: 1, consecutiveFailures: DIFFICULTY.easeAfterFailures }), seeded(1)).buildLevel();
     expect(eased.waves).toEqual(['classic', 'classic']);
     expect(new LearningEngine(stateAt(mulStage, { levelInStage: 1 }), seeded(1)).buildPracticeLevel(['mul:7'], 3).waves).toEqual(['classic']);
