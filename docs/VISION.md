@@ -133,6 +133,20 @@ For example, they can drill the ×7 table they're learning at school.
   public signup can be added later, which will need email verification, password reset and
   COPPA-conscious data handling.
 
+### Parked: battle mode and a shared leaderboard (considered October 2026)
+
+- **Couch battle** (two ships on one device, each player answering their own profile's facts,
+  first to clear wins) needs no infrastructure: the cheapest way to learn whether kids enjoy
+  competing. **Challenge links** (a fixed, repeatable question set plus a score in a shareable
+  URL) add async rivalry, still serverless. **Live online battles** need a real-time server,
+  matchmaking, cheat protection and safeguards against pairing kids with strangers.
+- **Leaderboards** need a backend (the static GitHub Pages site can't share state), mean
+  storing children's data online (nickname + score only, family or class scoped), and can be
+  faked from the browser. Raw scores also aren't comparable across stages and reward existing
+  skill; rank effort and improvement instead (badges, facts mastered this week, days played,
+  personal-best gains).
+- Revisit with the Phase 2 backend rather than changing hosting just for this.
+
 ## Look, sound and accessibility
 
 - **Visual style:** Neon-vector glow combined with semi-realistic 3D: lit, textured ships and
