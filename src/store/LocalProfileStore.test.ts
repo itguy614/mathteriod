@@ -26,7 +26,7 @@ describe('LocalProfileStore', () => {
     expect(p.owned).not.toContain('arrow');
     expect(p.owned).not.toContain('stingray');
     expect(p.owned).not.toContain('gold');
-    expect(p.settings).toEqual({ musicVolume: 0.5, sfxVolume: 0.8, readAloud: false, controlMode: 'direct', touchMode: 'tapdrag' });
+    expect(p.settings).toEqual({ musicVolume: 0.5, sfxVolume: 0.8, readAloud: false, controlMode: 'rotate', touchMode: 'tapdrag' });
 
     const raw = JSON.parse(storage.getItem(STORAGE_KEY)!);
     expect(raw.version).toBe(SCHEMA_VERSION);
