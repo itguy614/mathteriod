@@ -18,6 +18,8 @@ export {
   LearningEngine,
   initialLearningState,
   MASTERY,
+  REVIEW,
+  reviewDueAt,
   DIFFICULTY,
   RECENT_WINDOW,
   factWeight,

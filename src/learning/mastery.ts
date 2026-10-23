@@ -5,8 +5,9 @@
 import type { FactStat } from '../types';
 
 /**
- * Mastery gate. Response times include flying and aiming at the asteroid,
- * so these are looser than flashcard thresholds.
+ * Mastery gate. Response times exclude turning and bolt flight (game/level.ts),
+ * but still include spotting the rock among others, so these are looser than
+ * flashcard thresholds.
  */
 export const MASTERY = {
   /** Pooled accuracy over the recent windows of the stage's facts. */
@@ -49,6 +50,36 @@ export function median(xs: number[]): number | null {
   const s = [...xs].sort((a, b) => a - b);
   const mid = s.length >> 1;
   return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Spaced review of earlier stages' facts in missions. A fact's review gap grows
+ * with its run of first-try correct answers (1 → 3 → 7 → 14 → 30 days); a miss
+ * makes it due again at once. Slow facts never get past the first gap.
+ */
+export const REVIEW = {
+  gapsDays: [1, 3, 7, 14, 30],
+  /** Target share of a mission level's question weight given to due review facts. */
+  share: 0.2,
+};
+
+/** Correct first tries in a row, newest last. */
+function correctRun(st: FactStat): number {
+  let n = 0;
+  for (let i = st.recent.length - 1; i >= 0 && st.recent[i]; i--) n++;
+  return n;
+}
+
+/** When a seen fact is next due for review (epoch ms). Never-seen facts aren't scheduled. */
+export function reviewDueAt(st: FactStat): number {
+  const run = correctRun(st);
+  if (run === 0) return st.lastSeen;
+  const slow = !isKnown(st);
+  const gaps = REVIEW.gapsDays;
+  const days = slow ? gaps[0] : gaps[Math.min(run, gaps.length) - 1];
+  return st.lastSeen + days * DAY_MS;
 }
 
 /** True when the kid reliably knows a fact: recent accuracy high and mostly quick. */

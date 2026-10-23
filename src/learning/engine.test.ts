@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AnswerEvent, FactStat, LearningState, LevelResult } from '../types';
-import { DIFFICULTY, LearningEngine, MASTERY, groupByQuestion, initialLearningState } from './engine';
+import { DIFFICULTY, LearningEngine, MASTERY, groupByQuestion, initialLearningState, reviewDueAt } from './engine';
+import { stageIndexById } from './curriculum';
 import { STAGES } from './curriculum';
 import { factById } from './facts';
 
@@ -370,5 +371,62 @@ describe('pace (playtest: level 74 and still on addition)', () => {
     const engine = new LearningEngine(initialLearningState(), seeded(9));
     for (let i = 0; i < 15; i++) playPerfectLevel(engine, MASTERY.fastMs + 2000);
     expect(engine.getState().stageIndex).toBe(0);
+  });
+});
+
+describe('spaced review', () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const NOW = 100 * DAY;
+  const stat = (recent: boolean[], lastSeen: number, ms = 1500): FactStat => ({
+    attempts: recent.length,
+    correct: recent.filter(Boolean).length,
+    recentMs: recent.filter(Boolean).map(() => ms),
+    recent,
+    lastSeen,
+  });
+
+  it('review gaps grow with the run of correct first tries', () => {
+    expect(reviewDueAt(stat([false, true], 0))).toBe(1 * DAY); // run 1
+    expect(reviewDueAt(stat([true, true, true], 0))).toBe(7 * DAY); // run 3
+    expect(reviewDueAt(stat([true, true, true, true, true, true, true], 0))).toBe(30 * DAY); // capped
+    expect(reviewDueAt(stat([true, true, false], 5 * DAY))).toBe(5 * DAY); // just missed: due now
+  });
+
+  it('slow facts stay on the shortest gap', () => {
+    expect(reviewDueAt(stat([true, true, true, true], 0, 9000))).toBe(1 * DAY);
+  });
+
+  const mulStage = stageIndexById('mul-easy');
+  const add85 = 'add:8:5'; // answer 13: never a product of 1–12 operands
+
+  it('only overdue facts from earlier stages are due', () => {
+    const state = stateAt(mulStage, {
+      factStats: {
+        [add85]: stat([true, true, true], NOW - 8 * DAY), // 7-day gap, overdue
+        'add:2:3': stat([true, true, true], NOW - 2 * DAY), // not due yet
+        'mul:2:5': stat([false], 0), // current stage: never "review"
+      },
+    });
+    const ids = new LearningEngine(state, seeded(1), () => NOW).dueReviewFacts().map((f) => f.id);
+    expect(ids).toEqual([add85]);
+  });
+
+  it('due review facts are mixed into mission levels', () => {
+    const due = stateAt(mulStage, { factStats: { [add85]: stat([true, true, true], NOW - 8 * DAY) } });
+    const cfg = new LearningEngine(due, seeded(2), () => NOW).buildLevel();
+    const vals = cfg.questions.initialValues(400);
+    const share = vals.filter((v) => v === 13).length / vals.length;
+    expect(share).toBeGreaterThan(0.02);
+    expect(cfg.questions.pickQuestion([13]).factId).toBe(add85);
+
+    const notDue = stateAt(mulStage, { factStats: { [add85]: stat([true, true, true], NOW - 1 * DAY) } });
+    const plain = new LearningEngine(notDue, seeded(2), () => NOW).buildLevel();
+    expect(plain.questions.initialValues(400)).not.toContain(13);
+  });
+
+  it('practice levels never mix in review', () => {
+    const due = stateAt(mulStage, { factStats: { [add85]: stat([true, true, true], NOW - 8 * DAY) } });
+    const cfg = new LearningEngine(due, seeded(3), () => NOW).buildPracticeLevel(['mul:7'], 0);
+    expect(cfg.questions.initialValues(200)).not.toContain(13);
   });
 });

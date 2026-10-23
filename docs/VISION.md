@@ -54,6 +54,11 @@ Promotion comes only when a child has actually mastered a set of facts.
   - Example multiplication ramp: ×1, ×2, ×5, ×10 → ×3, ×4 → ×6–×9 → ×11, ×12.
 - **Adaptive practice:** Every answer is logged per fact (correct/incorrect, response time).
   Facts that are missed or answered slowly appear more often.
+- **Spaced review:** Facts from earlier stages come back on a schedule: the gap grows with
+  each correct first try (1 → 3 → 7 → 14 → 30 days), a miss makes the fact due again, and slow
+  facts stay on the shortest gap. Due facts fill about 1 in 5 questions of a mission level.
+- **Fair timing:** Recall time stops at the decision (a tap, or firing the bolt that hits),
+  minus the ship's minimum turn time, so steering skill doesn't count against the math.
 - **Mastery gate (accuracy + speed):** A child is promoted from a stage only when they reach,
   for example, **≥90% accuracy with most answers under ~3 seconds** across that stage's facts.
   The thresholds are tunable. Kids progress at their own pace.

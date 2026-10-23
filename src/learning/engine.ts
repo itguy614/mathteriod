@@ -19,10 +19,10 @@ import type {
 } from '../types';
 import { allFacts, factById, makeFact } from './facts';
 import { STAGES } from './curriculum';
-import { MASTERY, factMastered, factWeight, median } from './mastery';
+import { MASTERY, REVIEW, factMastered, factWeight, median, reviewDueAt } from './mastery';
 import { factsForSkills, skillLabel } from './skills';
 
-export { MASTERY, factMastered, factWeight };
+export { MASTERY, REVIEW, factMastered, factWeight, reviewDueAt };
 
 // ---------------------------------------------------------------------------
 // Tunables
@@ -168,14 +168,35 @@ class AdaptiveQuestionProvider implements QuestionProvider {
   private readonly history: string[] = [];
   private lastFactId: string | null = null;
 
+  /** Stage facts plus any mixed-in review facts. */
+  private readonly facts: Fact[];
+
+  /**
+   * @param review due facts from earlier stages, mixed in at REVIEW.share of the
+   *               total question weight (they don't count toward this stage's gate).
+   */
   constructor(
     private readonly stage: StageDef,
     stats: Record<string, FactStat>,
     eased: boolean,
     private readonly rng: () => number,
+    review: readonly Fact[] = [],
   ) {
+    let stageTotal = 0;
     for (const f of stage.facts) {
-      this.weights.set(f.id, factWeight(stats[f.id], eased));
+      const w = factWeight(stats[f.id], eased);
+      this.weights.set(f.id, w);
+      stageTotal += w;
+    }
+    const extra = review.filter((f) => !this.weights.has(f.id));
+    if (extra.length > 0 && stageTotal > 0) {
+      const raw = extra.map((f) => factWeight(stats[f.id]));
+      const rawTotal = raw.reduce((a, b) => a + b, 0) || 1;
+      const target = (stageTotal * REVIEW.share) / (1 - REVIEW.share);
+      extra.forEach((f, i) => this.weights.set(f.id, (raw[i] / rawTotal) * target));
+    }
+    this.facts = [...stage.facts, ...(stageTotal > 0 ? extra : [])];
+    for (const f of this.facts) {
       const list = this.byAnswer.get(f.answer);
       if (list) list.push(f);
       else this.byAnswer.set(f.answer, [f]);
@@ -184,7 +205,7 @@ class AdaptiveQuestionProvider implements QuestionProvider {
   }
 
   initialValues(count: number): number[] {
-    const facts = this.stage.facts;
+    const facts = this.facts;
     const out: number[] = [];
     const used = new Map<number, number>();
     for (let i = 0; i < count; i++) {
@@ -439,8 +460,23 @@ export class LearningEngine {
   }
 
   /** The same adaptive provider for Missions and Practice. */
-  private provider(stage: StageDef, eased: boolean): QuestionProvider {
-    return new AdaptiveQuestionProvider(stage, this.state.factStats, eased, this.rng);
+  private provider(stage: StageDef, eased: boolean, review: readonly Fact[] = []): QuestionProvider {
+    return new AdaptiveQuestionProvider(stage, this.state.factStats, eased, this.rng, review);
+  }
+
+  /** Facts from earlier stages (not in the current one) that are due for spaced review. */
+  dueReviewFacts(): Fact[] {
+    const current = new Set(this.currentStage().facts.map((f) => f.id));
+    const now = this.now();
+    const out = new Map<string, Fact>();
+    for (let i = 0; i < this.state.stageIndex; i++) {
+      for (const f of STAGES[i].facts) {
+        if (current.has(f.id) || out.has(f.id)) continue;
+        const st = this.state.factStats[f.id];
+        if (st && st.attempts > 0 && reviewDueAt(st) <= now) out.set(f.id, f);
+      }
+    }
+    return [...out.values()];
   }
 
   buildLevel(): LevelConfig {
@@ -456,7 +492,7 @@ export class LearningEngine {
       asteroidSpeed: pace.speed,
       maxAsteroids: eased ? DIFFICULTY.easedMaxAsteroids : DIFFICULTY.maxAsteroids,
       eased,
-      questions: this.provider(stage, eased),
+      questions: this.provider(stage, eased, this.dueReviewFacts()),
     };
   }
 
