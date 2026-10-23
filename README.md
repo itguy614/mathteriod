@@ -26,6 +26,14 @@ the firewall.
 Game engine sandbox (loadout switcher, event log): `http://localhost:5173/src/game/dev.html`
 (`?start=1&stage=mul-easy&waves=reverse,classic` starts a real engine level with chosen waves)
 
+## Publish
+
+Every push to `main` runs `.github/workflows/pages.yml`: tests, a production build with
+`BASE_PATH=/Mathteriod/`, then a deploy to GitHub Pages at **https://wolfienet.com/Mathteriod/**
+(the repo's Pages site under the `itguy614.github.io` custom domain). Run it by hand from the
+Actions tab with "Run workflow". Profiles live in each player's browser (`localStorage`), so the
+published site and a local dev server keep separate pilots.
+
 ## Layout
 
 | Path | What |
