@@ -68,7 +68,7 @@ export class Engine implements GameEngine {
       pickRock: (cx, cy, padPx) => {
         if (this.mode !== 'level' || this.paused || !this.level) return false;
         const w = this.clientToWorld(cx, cy);
-        return !!w && !!this.level.rockAt(w.x, w.y, padPx);
+        return !!w && !!this.level.targetAt(w.x, w.y, padPx);
       },
       toWorld: (cx, cy) => this.clientToWorld(cx, cy) ?? { x: 0, y: 0 },
     });

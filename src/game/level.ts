@@ -49,6 +49,9 @@ const HULL_MAX = HITS_ALLOWED * HULL.segmentsPerShip;
 /** Scratch list for Asteroid.images(). */
 const IMAGES: THREE.Vector2[] = [];
 
+/** Something the player can tap to aim at: a numbered rock or the bonus UFO. */
+type Target = Asteroid | Ufo;
+
 function wrapAngle(a: number): number {
   while (a > Math.PI) a -= Math.PI * 2;
   while (a < -Math.PI) a += Math.PI * 2;
@@ -73,7 +76,7 @@ export class LevelController {
   /** Seconds the ship spent destroyed since the answer clock started. */
   private qDead = 0;
   /** Last tap on a rock: tap-to-target answers are timed from the tap. */
-  private tapDecision: { target: Asteroid; t: number } | null = null;
+  private tapDecision: { target: Target; t: number } | null = null;
   /** When each bolt was fired, the ship's heading then, and the tap time when it was a tap-to-target shot. */
   private laserShots = new WeakMap<Laser, { t: number; heading: number; tapT: number | null }>();
   private answers: AnswerEvent[] = [];
@@ -110,7 +113,7 @@ export class LevelController {
   private boss: { rock: Asteroid; shards: Asteroid[]; hp: number; t: number } | null = null;
   private bossesBeaten = 0;
   /** Rock each bolt locked onto when fired (aim assist curves only toward it). */
-  private laserTargets = new WeakMap<Laser, Asteroid>();
+  private laserTargets = new WeakMap<Laser, Target>();
   private score = 0;
   private shieldState: ShieldState;
   private state: 'playing' | 'ending' = 'playing';
@@ -146,7 +149,7 @@ export class LevelController {
   private hintT = 0;
   private tmpV = new THREE.Vector3();
   private disposed = false;
-  private tapTarget: Asteroid | null = null;
+  private tapTarget: Target | null = null;
   private tapT = 0;
 
   constructor(
@@ -565,10 +568,30 @@ export class LevelController {
     return best;
   }
 
-  /** Tap/click on the field (world coords): lock onto the nearest numbered rock under it. */
+  /**
+   * The tappable target under a world point: the bonus UFO (its saucer or the
+   * number above it) wins over rocks, since it's only there for a moment.
+   */
+  targetAt(wx: number, wy: number, padPx: number = TAP_TARGET.pickPadPx): Target | null {
+    const u = this.ufo;
+    if (u && this.question && this.state === 'playing') {
+      const pad = padPx / this.ctx.gfx.pxPerUnit;
+      const onSaucer = Math.hypot(u.pos.x - wx, u.pos.y - wy) <= UFO.radius + pad;
+      const onNumber = Math.hypot(u.pos.x - wx, u.pos.y + UFO.radius + UFO.labelOffset - wy) <= UFO.labelRadius + pad;
+      if (onSaucer || onNumber) return u;
+    }
+    return this.rockAt(wx, wy, padPx);
+  }
+
+  /** Can a tap target still be aimed at and shot? */
+  private targetLive(t: Target): boolean {
+    return t instanceof Ufo ? t === this.ufo : t.alive && t.value !== null && t.active;
+  }
+
+  /** Tap/click on the field (world coords): lock onto the UFO or nearest numbered rock under it. */
   tapAt(wx: number, wy: number, padPx: number = TAP_TARGET.pickPadPx): void {
     if (this.state !== 'playing' || !this.ship.alive) return;
-    const best = this.rockAt(wx, wy, padPx);
+    const best = this.targetAt(wx, wy, padPx);
     if (best) {
       this.tapTarget = best;
       this.tapT = TAP_TARGET.timeout;
@@ -577,7 +600,7 @@ export class LevelController {
   }
 
   /** Heading the ship needs to hit `a` (with a little lead). */
-  private aimAngle(a: Asteroid): number {
+  private aimAngle(a: Target): number {
     const s = this.ship;
     // Lasers don't wrap, so aim straight at the rock (its center is always on screen).
     const dx0 = a.pos.x - s.pos.x;
@@ -586,7 +609,7 @@ export class LevelController {
     return Math.atan2(-(dx0 + a.vel.x * t), dy0 + a.vel.y * t);
   }
 
-  private aimError(a: Asteroid): number {
+  private aimError(a: Target): number {
     return Math.abs(wrapAngle(this.aimAngle(a) - this.ship.angle));
   }
 
@@ -597,7 +620,7 @@ export class LevelController {
     this.tapT -= dt;
     const c = this.controls;
     const manual = this.options.controlMode === 'direct' ? c.moveX !== 0 || c.moveY !== 0 : c.turn !== 0;
-    if (!tgt.alive || tgt.value === null || this.tapT <= 0 || manual || c.stickActive) {
+    if (!this.targetLive(tgt) || this.tapT <= 0 || manual || c.stickActive) {
       this.tapTarget = null;
       return false;
     }
@@ -614,7 +637,7 @@ export class LevelController {
     for (const l of this.ctx.lasers.list) {
       if (l.cosmetic) continue;
       const a = this.laserTargets.get(l);
-      if (!a || !a.alive || a.value === null || !a.active) continue;
+      if (!a || !this.targetLive(a)) continue;
       const dx = a.pos.x - l.pos.x;
       const dy = a.pos.y - l.pos.y;
       const diff = wrapAngle(Math.atan2(dy, dx) - Math.atan2(l.vel.y, l.vel.x));
@@ -664,7 +687,7 @@ export class LevelController {
     return AIM_ASSIST.cone * (this.power?.kind === 'magnet' ? POWERUP.magnetCone : 1);
   }
 
-  private fire(cooldown: number, target: Asteroid | null = null): void {
+  private fire(cooldown: number, target: Target | null = null): void {
     const { lasers, audio } = this.ctx;
     const m = this.ship.muzzleWorld(this.tmpV);
     const wide = this.power?.kind === 'wide';

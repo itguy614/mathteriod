@@ -175,6 +175,9 @@ export const UFO = {
   correctChance: 0.6,
   radius: 2.6,
   scale: 1.1,
+  /** Its number floats this far above the saucer; taps within labelRadius of it count. */
+  labelOffset: 2.4,
+  labelRadius: 2.8,
   bonusScore: 250,
 } as const;
 
