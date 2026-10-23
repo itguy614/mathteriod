@@ -22,6 +22,9 @@ export function levelIntroScreen(opts: { config: LevelConfig; audio: AudioBus; k
       h('div', { class: 'intro-stage' }, opts.title ?? config.stageName),
       config.eased ? h('div', { class: 'intro-eased' }, h('span', { 'aria-hidden': 'true' }, '🌱'), ' Warm-up round') : null,
       waves > 1 ? h('div', { class: 'intro-waves' }, `${waves} waves`) : null,
+      config.waves.includes('boss')
+        ? h('div', { class: 'intro-mode intro-boss' }, h('strong', null, h('span', { 'aria-hidden': 'true' }, '👾'), ' Boss at the end!'), h('span', null, 'Shoot the shard with the answer to crack it.'))
+        : null,
       reverse
         ? h(
             'div',

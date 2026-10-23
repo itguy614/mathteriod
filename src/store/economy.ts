@@ -9,6 +9,8 @@ export const CLEAR_BONUS = 25;
 export const PROMOTION_BONUS = 100;
 /** Extra stardust per bonus UFO shot while it showed the right answer. */
 export const UFO_BONUS = 15;
+/** Extra stardust per boss beaten. */
+export const BOSS_BONUS = 50;
 /** Accuracy at or above this on a cleared level earns the accuracy bonus. */
 export const ACCURACY_BONUS_THRESHOLD = 0.9;
 export const ACCURACY_BONUS = 15;
@@ -23,6 +25,7 @@ export interface StardustBreakdown {
   clear: number;
   accuracy: number;
   promotion: number;
+  /** UFO and boss bonuses. */
   ufo: number;
   total: number;
 }
@@ -50,7 +53,7 @@ export function stardustBreakdown(result: LevelResult, summary: LevelSummary, ra
     accuracy = Math.round(accuracy * rate);
   }
   const promo = Math.round(promotion * rate);
-  const ufo = Math.round((result.ufoHits ?? 0) * UFO_BONUS * rate);
+  const ufo = Math.round(((result.ufoHits ?? 0) * UFO_BONUS + (result.bossesBeaten ?? 0) * BOSS_BONUS) * rate);
   // A failed level with at least one right answer always earns something.
   const total = Math.max(correct + speed + clear + accuracy + promo + ufo, correctAnswers.length > 0 ? 5 : 0);
   return { correct, speed, clear, accuracy, promotion: promo, ufo, total };

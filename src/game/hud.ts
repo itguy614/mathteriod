@@ -52,6 +52,7 @@ export class Hud {
   private lives: HTMLSpanElement;
   private streakEl: HTMLSpanElement;
   private powerEl: HTMLSpanElement;
+  private bossEl: HTMLDivElement;
   private score: HTMLSpanElement;
   private level: HTMLDivElement;
   private pauseBtn: HTMLButtonElement;
@@ -66,6 +67,7 @@ export class Hud {
     root.innerHTML = `
       <div class="mt-hud-hull"><span class="mt-hud-lives" role="img" aria-label="Ship hull"></span><span class="mt-hud-streak" role="img"></span><span class="mt-hud-power" role="img"></span></div>
       <div class="mt-hud-banner" role="status" aria-live="polite"><span class="mt-hud-eq"></span></div>
+      <div class="mt-hud-boss" role="img"></div>
       <div class="mt-hud-right">
         <div class="mt-hud-score"><span class="mt-hud-score-label">Score</span> <span class="mt-hud-score-val">0</span></div>
         <button class="mt-hud-pause" type="button" aria-label="Pause"><span></span><span></span></button>
@@ -89,6 +91,7 @@ export class Hud {
     this.lives = q('.mt-hud-lives');
     this.streakEl = q('.mt-hud-streak');
     this.powerEl = q('.mt-hud-power');
+    this.bossEl = q('.mt-hud-boss');
     this.score = q('.mt-hud-score-val');
     this.level = q('.mt-hud-level');
     this.pauseBtn = q('.mt-hud-pause');
@@ -170,6 +173,23 @@ export class Hud {
   revealAnswer(text: string): void {
     this.eq.textContent = text;
     this.banner.classList.add('mt-hud-banner--on', 'mt-hud-banner--reveal');
+  }
+
+  /** Boss health under the banner (null hides it); `healed` flashes it (a wrong answer). */
+  setBoss(hp: number | null, max = 0, healed = false): void {
+    const el = this.bossEl;
+    if (hp === null) {
+      el.classList.remove('mt-hud-boss--on');
+      return;
+    }
+    let html = '<span class="mt-hud-boss-tag" aria-hidden="true">👾 BOSS</span>';
+    for (let i = 0; i < max; i++) html += `<span class="mt-hud-boss-pip${i < hp ? ' mt-hud-boss-pip--on' : ''}"></span>`;
+    el.innerHTML = html;
+    el.setAttribute('aria-label', `Boss health ${hp} of ${max}`);
+    el.classList.add('mt-hud-boss--on');
+    el.classList.remove('mt-hud-boss--healed', 'mt-hud-boss--hit');
+    void el.offsetWidth;
+    el.classList.add(healed ? 'mt-hud-boss--healed' : 'mt-hud-boss--hit');
   }
 
   /** Active power-up beside the streak meter: its icon inside a ring that empties as it runs out. */

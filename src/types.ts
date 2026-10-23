@@ -69,8 +69,10 @@ export interface LearningState {
  * A level is a run of waves; each wave flies in a fresh field and must be
  * cleared before the next. 'classic': one equation, shoot the answer.
  * 'reverse': one number, shoot every equation that makes it.
+ * 'boss': a giant rock circled by numbered shards; each right answer cracks it,
+ * each wrong one heals it.
  */
-export type WaveKind = 'classic' | 'reverse';
+export type WaveKind = 'classic' | 'reverse' | 'boss';
 
 export interface Question {
   factId: string;
@@ -161,6 +163,8 @@ export interface LevelResult {
   score: number;
   /** Bonus UFOs shot while showing the right answer. */
   ufoHits?: number;
+  /** Boss waves won. */
+  bossesBeaten?: number;
 }
 
 /** Returned by the learning engine after recording a level. */

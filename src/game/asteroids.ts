@@ -59,7 +59,8 @@ export class Asteroid {
   readonly group = new THREE.Group();
   readonly pos = new THREE.Vector2();
   readonly vel = new THREE.Vector2();
-  readonly radius: number;
+  /** Set at spawn from the size; the boss is a size-3 rock scaled up (AsteroidField.spawnBoss). */
+  radius: number;
   value: number | null;
   /** Reverse mode: the equation shown on the rock (value is its answer). */
   fact: Fact | null = null;
@@ -342,6 +343,14 @@ export class AsteroidField {
       emissive: 0x120a22,
     });
     gfx.onResize(() => this.refreshLabelSizes());
+  }
+
+  /** The boss: an unnumbered size-3 rock, `scale` times bigger. */
+  spawnBoss(scale: number, x: number, y: number): Asteroid {
+    const a = this.spawn(3, null, x, y, 0, 0, true);
+    a.radius *= scale;
+    a.update(0, this.gfx.halfW, this.gfx.halfH);
+    return a;
   }
 
   spawn(size: AsteroidSize, value: number | null, x: number, y: number, vx: number, vy: number, fadeIn = false): Asteroid {

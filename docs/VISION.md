@@ -50,6 +50,9 @@ Promotion comes only when a child has actually mastered a set of facts.
   sometimes the current answer, sometimes a near miss. Shoot it when it's right for a score and
   Stardust bonus (it counts as answering the question); shoot it when it's wrong and it's a
   normal wrong answer; ignore it at no cost.
+- **Boss waves:** Every (non-eased) level in a review stage ends with a boss: a giant rock
+  circled by 4 numbered shards. Shooting the shard with the answer cracks the boss (5 cracks to
+  win, +50 Stardust); a wrong shard heals it by one. Its hide deflects bolts.
 - **Reverse waves** are smaller and slower (3 rocks, 75% speed): reading equations takes longer.
 
 ### Equation modes (mixed across levels for variety)

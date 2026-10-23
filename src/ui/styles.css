@@ -1040,6 +1040,15 @@ button {
   font-size: 1.15rem;
 }
 
+.intro-boss {
+  border-color: #ff4f7a;
+  background: rgba(255, 79, 122, 0.1);
+}
+
+.intro-boss strong {
+  color: #ff9ab2;
+}
+
 .intro-mode strong {
   font-family: var(--font-head);
   font-size: 1.4rem;

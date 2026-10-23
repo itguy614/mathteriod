@@ -178,6 +178,28 @@ export const UFO = {
   bonusScore: 250,
 } as const;
 
+/**
+ * Boss wave: a giant rock circled by numbered shards. Shoot the shard with the
+ * answer to crack the boss; a wrong shard heals it.
+ */
+export const BOSS = {
+  hp: 5,
+  shards: 4,
+  /** Boss size relative to a large rock. */
+  scale: 1.35,
+  /** Shard orbit: distance beyond the boss's radius, and angular speed (rad/s). */
+  orbitGap: 5,
+  orbitSpeed: 0.45,
+  /**
+   * The boss drifts on a slow figure-of-eight just above mid-screen: its top
+   * shard stays below the HUD banner, its bottom one clear of the ship's spot.
+   */
+  path: { x: 0.3, y: 0.08, wobble: 0.08, fx: 0.2, fy: 0.31 },
+  /** Ship invulnerability while the boss arrives. */
+  entryGrace: 3,
+  defeatScore: 1000,
+} as const;
+
 /** Between waves: a short breather, and a free hull repair. */
 export const WAVE = {
   pauseSec: 2,

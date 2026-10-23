@@ -598,6 +598,8 @@ export class LearningEngine {
     const reverse = !eased && this.state.levelInStage % DIFFICULTY.reverseEvery === DIFFICULTY.reverseEvery - 1;
     const waves: WaveKind[] = Array.from({ length: eased ? DIFFICULTY.easedWaves : DIFFICULTY.waves }, () => 'classic');
     if (reverse) waves[waves.length >> 1] = 'reverse';
+    // review stages end every (non-eased) level with a boss
+    if (!eased && stage.id.endsWith('review')) waves[waves.length - 1] = 'boss';
     return {
       stageId: stage.id,
       stageName: stage.name,

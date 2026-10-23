@@ -356,6 +356,7 @@ describe('pace (playtest: level 74 and still on addition)', () => {
         }
         continue;
       }
+      // a boss wave asks ~5 questions; close enough to a Classic wave for pacing
       const live = config.questions.initialValues(config.initialAsteroids);
       while (live.length > 0) {
         const q = config.questions.pickQuestion(live);
@@ -441,6 +442,16 @@ describe('spaced review', () => {
     const due = stateAt(mulStage, { factStats: { [add85]: stat([true, true, true], NOW - 8 * DAY) } });
     const cfg = new LearningEngine(due, seeded(3), () => NOW).buildPracticeLevel(['mul:7'], 0);
     expect(cfg.questions.initialValues(200)).not.toContain(13);
+  });
+});
+
+describe('boss waves', () => {
+  it('review stages end every non-eased level with a boss wave', () => {
+    const review = stageIndexById('add-review');
+    expect(new LearningEngine(stateAt(review), seeded(1)).buildLevel().waves).toEqual(['classic', 'classic', 'boss']);
+    const eased = new LearningEngine(stateAt(review, { consecutiveFailures: DIFFICULTY.easeAfterFailures }), seeded(1)).buildLevel();
+    expect(eased.waves).not.toContain('boss');
+    expect(new LearningEngine(stateAt(stageIndexById('add-small')), seeded(1)).buildLevel().waves).not.toContain('boss');
   });
 });
 

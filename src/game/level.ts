@@ -16,7 +16,7 @@ import { HITS_ALLOWED } from '../catalog';
 import type { Asteroid, AsteroidField } from './asteroids';
 import { circlesOverlap, segmentHitsCircle } from './collision';
 import { AimGuide } from './aimGuide';
-import { AIM_ASSIST, ASTEROID, ENTRY, HINT, HULL, LASER, LEVEL, POWERUP, REVEAL, SHIP, TAP_TARGET, UFO, WAVE, type AsteroidSize } from './constants';
+import { AIM_ASSIST, ASTEROID, BOSS, ENTRY, HINT, HULL, LASER, LEVEL, POWERUP, REVEAL, SHIP, TAP_TARGET, UFO, WAVE, type AsteroidSize } from './constants';
 import { POWER_INFO, POWER_KINDS, PowerUpField, Ufo, type Crystal, type PowerKind } from './bonus';
 import type { Effects } from './effects';
 import type { Graphics } from './graphics';
@@ -103,6 +103,9 @@ export class LevelController {
   /** Countdown to this wave's UFO, or null when the wave has none. */
   private ufoT: number | null = null;
   private ufoHits = 0;
+  /** Boss wave in play: the boss rock, its orbiting numbered shards, and its health. */
+  private boss: { rock: Asteroid; shards: Asteroid[]; hp: number; t: number } | null = null;
+  private bossesBeaten = 0;
   /** Rock each bolt locked onto when fired (aim assist curves only toward it). */
   private laserTargets = new WeakMap<Laser, Asteroid>();
   private score = 0;
@@ -193,9 +196,14 @@ export class LevelController {
     const kind = this.waves[i];
     this.reverse = kind === 'reverse' ? (this.config.reverse ?? null) : null;
     this.removeUfo();
-    this.ufoT = !this.reverse && Math.random() < UFO.chancePerWave ? randRange(UFO.delay[0], UFO.delay[1]) : null;
+    this.ufoT = kind === 'classic' && Math.random() < UFO.chancePerWave ? randRange(UFO.delay[0], UFO.delay[1]) : null;
     if (this.waves.length > 1) hud.setLevel(this.config.levelNumber, this.config.stageName, { n: i + 1, of: this.waves.length });
     hud.setMessage(null);
+    if (kind === 'boss') {
+      this.spawnBoss();
+      this.nextQuestion();
+      return;
+    }
     this.spawnInitial();
     if (field.liveValues().length === 0) {
       this.waveCleared();
@@ -218,7 +226,7 @@ export class LevelController {
     this.setEquationLabel(null);
     hud.setQuestion(null);
     this.betweenT = WAVE.pauseSec;
-    const upNext = this.waves[next] === 'reverse' ? ' · Reverse!' : '';
+    const upNext = this.waves[next] === 'reverse' ? ' · Reverse!' : this.waves[next] === 'boss' ? ' · BOSS!' : '';
     hud.setMessage(`Wave ${next + 1} of ${this.waves.length}${upNext}`, 'clear');
     audio.play('levelClear');
     effects.fireworks(1);
@@ -313,12 +321,17 @@ export class LevelController {
     const live = field.liveValues();
     let q: Question;
     try {
-      q = this.reverse ? this.reverseQuestion(this.reverse.pickTarget(this.liveFacts())) : this.config.questions.pickQuestion(live);
+      q = this.boss
+        ? this.bossQuestion()
+        : this.reverse
+          ? this.reverseQuestion(this.reverse.pickTarget(this.liveFacts()))
+          : this.config.questions.pickQuestion(live);
     } catch (err) {
       console.error('[game] pickQuestion failed', err);
       return;
     }
-    if (!live.includes(q.answer)) {
+    // (boss questions paint their own shards, answer included)
+    if (!this.boss && !live.includes(q.answer)) {
       // Contract violation: keep the level clearable by painting the answer on a rock.
       console.warn('[game] pickQuestion answer not on any live asteroid; repainting one', q, live);
       const labeled = field.list.filter((a) => a.value !== null);
@@ -472,6 +485,7 @@ export class LevelController {
     // Slow-mo slows the rocks only; the ship and bolts keep full speed
     field.update(this.power?.kind === 'slow' ? dt * POWERUP.slowFactor : dt);
     this.updateBonuses(dt);
+    this.updateBoss(dt);
     if (this.betweenT > 0 && this.state === 'playing') {
       this.betweenT -= dt;
       if (this.betweenT <= 0) this.startWave(this.waveIndex + 1);
@@ -509,6 +523,7 @@ export class LevelController {
           hitsTaken: this.hitsTaken,
           score: this.score,
           ufoHits: this.ufoHits,
+          bossesBeaten: this.bossesBeaten,
         };
       }
     }
@@ -702,6 +717,13 @@ export class LevelController {
         if (this.state !== 'playing') return;
         continue;
       }
+      if (this.boss && seg(this.boss.rock.pos.x, this.boss.rock.pos.y, this.boss.rock.hitRadius * 0.9)) {
+        // the boss's hide is too tough: only the shards crack it
+        lasers.remove(l);
+        this.ctx.effects.sparks(l.pos.x, l.pos.y, this.boss.rock.rimMat.color);
+        this.boss.rock.flashT = 0.2;
+        continue;
+      }
       const extra = this.wideLasers.has(l) ? POWERUP.wideHit : 0;
       let hit: Asteroid | null = null;
       for (const a of field.list) {
@@ -737,6 +759,11 @@ export class LevelController {
     // Reverse mode scores the equation on the rock: shooting 5×5 for 24 is a miss on 5×5
     this.recordAnswer(a.fact?.id ?? q.factId, correct, responseMs, a.value);
 
+    if (correct && this.boss) {
+      this.rewardCorrect(a.pos.x, a.pos.y, a.radius, responseMs, 0);
+      this.crackBoss();
+      return;
+    }
     if (correct) {
       this.rewardCorrect(a.pos.x, a.pos.y, a.radius, responseMs, 0);
       field.remove(a);
@@ -747,8 +774,14 @@ export class LevelController {
       return;
     }
 
-    this.punishWrong(q, a.fact, a.pos.x, a.pos.y);
+    const counted = this.punishWrong(q, a.fact, a.pos.x, a.pos.y);
     if (this.state !== 'playing') return;
+    if (this.boss) {
+      if (counted) this.healBoss();
+      a.shakeT = 0.45;
+      effects.sparks(a.pos.x, a.pos.y, a.rimMat.color);
+      return;
+    }
     const dirX = l.vel.x / (l.vel.length() || 1);
     const dirY = l.vel.y / (l.vel.length() || 1);
     if (a.size > 1) {
@@ -790,8 +823,11 @@ export class LevelController {
     if (this.streak % POWERUP.every === 0) this.dropPowerUp(x, y);
   }
 
-  /** A wrong answer: ✗, streak reset, and (once per burst) the fact reveal and hull damage. */
-  private punishWrong(q: Question, hitFact: Fact | null, x: number, y: number): void {
+  /**
+   * A wrong answer: ✗, streak reset, and (once per burst) the fact reveal and hull
+   * damage. Returns true when it counted as a miss (not inside the burst grace).
+   */
+  private punishWrong(q: Question, hitFact: Fact | null, x: number, y: number): boolean {
     const { audio, effects, hud } = this.ctx;
     audio.play('wrong');
     hud.react('wrong');
@@ -803,7 +839,150 @@ export class LevelController {
       this.wrongGrace = HULL.wrongGraceSec;
       this.revealFact(q, hitFact);
       this.wrongAnswerDamage();
+      return true;
     }
+    return false;
+  }
+
+  // -------------------------------------------------------------------------
+  // Boss wave
+
+  private spawnBoss(): void {
+    const { field, gfx, hud, audio } = this.ctx;
+    const c = this.bossCenter(0);
+    const rock = field.spawnBoss(BOSS.scale, c.x, c.y);
+    const shards: Asteroid[] = [];
+    for (let i = 0; i < BOSS.shards; i++) {
+      const p = this.shardPos(rock, 0, i);
+      shards.push(field.spawn(1, 0, p.x, p.y, 0, 0, true));
+    }
+    this.boss = { rock, shards, hp: BOSS.hp, t: 0 };
+    // face the boss from the bottom of the screen while it arrives
+    const s = this.ship;
+    if (s.alive) {
+      s.pos.set(0, -gfx.halfH * 0.62);
+      s.vel.set(0, 0);
+      s.angle = 0;
+      this.qHeading = 0;
+    }
+    this.entryGrace = BOSS.entryGrace;
+    hud.setBoss(BOSS.hp, BOSS.hp);
+    hud.setMessage('BOSS!', 'clear');
+    audio.play('promote');
+    audio.speak('Boss! Shoot the shard with the answer.');
+    this.bossMessageT = 1.6;
+  }
+
+  private bossMessageT = 0;
+
+  private bossCenter(t: number): { x: number; y: number } {
+    const { halfW, halfH } = this.ctx.gfx;
+    const P = BOSS.path;
+    return {
+      x: halfW * P.x * Math.sin(t * P.fx),
+      y: halfH * P.y + halfH * P.wobble * Math.sin(t * P.fy),
+    };
+  }
+
+  private shardPos(rock: Asteroid, t: number, i: number): { x: number; y: number } {
+    const r = rock.radius + BOSS.orbitGap;
+    const ang = t * BOSS.orbitSpeed + (i * Math.PI * 2) / BOSS.shards;
+    return { x: rock.pos.x + Math.cos(ang) * r, y: rock.pos.y + Math.sin(ang) * r };
+  }
+
+  /** Move the boss on its path and its shards around it (velocities kept for aim lead). */
+  private updateBoss(dt: number): void {
+    const b = this.boss;
+    if (!b) return;
+    if (this.bossMessageT > 0) {
+      this.bossMessageT -= dt;
+      if (this.bossMessageT <= 0 && this.state === 'playing') this.ctx.hud.setMessage(null);
+    }
+    if (dt <= 0) return;
+    // Slow-mo slows the boss too
+    b.t += this.power?.kind === 'slow' ? dt * POWERUP.slowFactor : dt;
+    const c = this.bossCenter(b.t);
+    b.rock.vel.set((c.x - b.rock.pos.x) / dt, (c.y - b.rock.pos.y) / dt);
+    b.rock.pos.set(c.x, c.y);
+    b.shards.forEach((s, i) => {
+      const p = this.shardPos(b.rock, b.t, i);
+      s.vel.set((p.x - s.pos.x) / dt, (p.y - s.pos.y) / dt);
+      s.pos.set(p.x, p.y);
+    });
+  }
+
+  /** A question for the boss: a weighted stage fact, its answer on one shard and near misses on the rest. */
+  private bossQuestion(): Question {
+    const b = this.boss!;
+    const qs = this.config.questions;
+    const v = qs.initialValues(1)[0];
+    const q = qs.pickQuestion([v]);
+    const values = [q.answer];
+    for (let i = 1; i < b.shards.length; i++) {
+      let d = q.answer + i;
+      try {
+        for (let tries = 0; tries < 6; tries++) {
+          d = qs.splitValue(q, values);
+          if (!values.includes(d)) break;
+        }
+      } catch (err) {
+        console.error('[game] splitValue failed', err);
+      }
+      while (values.includes(d)) d++;
+      values.push(d);
+    }
+    // shuffle so the answer isn't always on the same shard
+    for (let i = values.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [values[i], values[j]] = [values[j], values[i]];
+    }
+    b.shards.forEach((s, i) => {
+      this.ctx.field.setValue(s, values[i]);
+      s.flashT = 0.35;
+    });
+    return q;
+  }
+
+  private crackBoss(): void {
+    const b = this.boss!;
+    const { effects, gfx, audio, hud } = this.ctx;
+    b.hp--;
+    b.rock.shakeT = 0.45;
+    b.rock.flashT = 0.35;
+    effects.correctBurst(b.rock.pos.x, b.rock.pos.y, b.rock.radius * 0.6);
+    gfx.shake(0.8, 0.3);
+    audio.play('split');
+    hud.setBoss(b.hp, BOSS.hp);
+    if (b.hp > 0) {
+      this.nextQuestion();
+      return;
+    }
+    // defeated
+    this.bossesBeaten++;
+    this.score += BOSS.defeatScore;
+    hud.setScore(this.score);
+    effects.shipExplosion(b.rock.pos.x, b.rock.pos.y, b.rock.rimMat.color);
+    effects.correctBurst(b.rock.pos.x, b.rock.pos.y, b.rock.radius);
+    effects.popLabel(`👾 Boss beaten! +${BOSS.defeatScore}`, b.rock.pos.x, b.rock.pos.y, true);
+    gfx.shake(1.6, 0.6);
+    this.removeBoss();
+    this.waveCleared();
+  }
+
+  private healBoss(): void {
+    const b = this.boss!;
+    if (b.hp >= BOSS.hp) return;
+    b.hp++;
+    this.ctx.hud.setBoss(b.hp, BOSS.hp, true);
+  }
+
+  private removeBoss(): void {
+    const b = this.boss;
+    if (!b) return;
+    for (const s of b.shards) this.ctx.field.remove(s);
+    this.ctx.field.remove(b.rock);
+    this.boss = null;
+    this.ctx.hud.setBoss(null);
   }
 
   // -------------------------------------------------------------------------
@@ -1185,6 +1364,7 @@ export class LevelController {
     hud.setQuestion(null);
     hud.hideHint();
     this.removeUfo();
+    this.removeBoss();
     this.powerups.clear();
     this.power = null;
     hud.setPower(null);
@@ -1208,6 +1388,7 @@ export class LevelController {
     this.removeUfo();
     this.powerups.dispose();
     this.ctx.hud.setPower(null);
+    this.ctx.hud.setBoss(null);
     this.ctx.hud.hideHint();
     if (this.eqTex) this.eqTex.dispose();
     (this.eqLabel.material as THREE.SpriteMaterial).dispose();

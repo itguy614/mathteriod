@@ -131,7 +131,7 @@ let mode: 'idle' | 'level' | 'hangar' = 'idle';
 function engineLevel(stageId: string, waves: string | null): LevelConfig {
   const state = { ...initialLearningState(), stageIndex: Math.max(0, stageIndexById(stageId)), levelInStage: 1 };
   const config = new LearningEngine(state).buildLevel();
-  if (waves) config.waves = waves.split(',').filter((w): w is WaveKind => w === 'classic' || w === 'reverse');
+  if (waves) config.waves = waves.split(',').filter((w): w is WaveKind => w === 'classic' || w === 'reverse' || w === 'boss');
   if (waves?.includes('reverse') && !config.reverse) {
     // the engine only builds a Reverse provider for Reverse levels: borrow one
     const rev = new LearningEngine({ ...state, levelInStage: 1 }).buildLevel();
