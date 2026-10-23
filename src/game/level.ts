@@ -64,6 +64,14 @@ export class LevelController {
   private simTime = 0;
   private question: Question | null = null;
   private qStart = 0;
+  /** Ship heading when the answer clock started (for the turn allowance). */
+  private qHeading = 0;
+  /** Seconds the ship spent destroyed since the answer clock started. */
+  private qDead = 0;
+  /** Last tap on a rock: tap-to-target answers are timed from the tap. */
+  private tapDecision: { target: Asteroid; t: number } | null = null;
+  /** When each bolt was fired, the ship's heading then, and the tap time when it was a tap-to-target shot. */
+  private laserShots = new WeakMap<Laser, { t: number; heading: number; tapT: number | null }>();
   private answers: AnswerEvent[] = [];
   /** Collisions this level (reported in the result). */
   private hitsTaken = 0;
@@ -248,7 +256,7 @@ export class LevelController {
       if (target) field.setValue(target, q.answer);
     }
     this.question = q;
-    this.qStart = this.simTime;
+    this.startAnswerClock();
     this.questionMisses = 0;
     this.revealT = 0;
     this.setEquationLabel(q.prompt);
@@ -303,6 +311,30 @@ export class LevelController {
     for (const a of this.ctx.field.list) a.hint = hintOn && a.value === q!.answer;
   }
 
+  private startAnswerClock(): void {
+    this.qStart = this.simTime;
+    this.qHeading = this.ship.angle;
+    this.qDead = 0;
+  }
+
+  /**
+   * Recall time for a hit, so steering skill doesn't count against the math:
+   * stop at the tap (tap-to-target) or when the bolt was fired (not when it
+   * landed), minus the least time the ship needed to turn from its heading at
+   * question start to the heading it fired at, minus time spent destroyed.
+   */
+  private responseMs(l: Laser): number {
+    const shot = this.laserShots.get(l);
+    let secs: number;
+    if (!shot) secs = this.simTime - this.qStart;
+    else if (shot.tapT !== null) secs = Math.max(shot.tapT, this.qStart) - this.qStart;
+    else {
+      const turn = Math.abs(wrapAngle(shot.heading - this.qHeading)) / SHIP.turnRate;
+      secs = shot.t - this.qStart - turn;
+    }
+    return Math.max(0, Math.round((secs - this.qDead) * 1000));
+  }
+
   private safeCall(fn: () => void): void {
     try {
       fn();
@@ -325,7 +357,8 @@ export class LevelController {
     this.simTime += dt;
     // The answer clock starts once the rocks have flown in; otherwise the first
     // answer of every level would count as slow for mastery.
-    if (field.entering) this.qStart = this.simTime;
+    if (field.entering) this.startAnswerClock();
+    if (!this.ship.alive) this.qDead += dt;
 
     // ship
     input.read(this.controls);
@@ -421,6 +454,7 @@ export class LevelController {
     if (best) {
       this.tapTarget = best;
       this.tapT = TAP_TARGET.timeout;
+      this.tapDecision = { target: best, t: this.simTime };
     }
   }
 
@@ -512,6 +546,8 @@ export class LevelController {
     const l = lasers.fire(m.x, m.y, this.ship.angle, this.ship.vel.x * 0.5, this.ship.vel.y * 0.5);
     const lock = target ?? this.pickLaserTarget(l);
     if (lock) this.laserTargets.set(l, lock);
+    const tap = this.tapDecision;
+    this.laserShots.set(l, { t: this.simTime, heading: this.ship.angle, tapT: target && tap?.target === target ? tap.t : null });
     this.fireCd = cooldown;
     audio.play('laser');
     this.hintUsed('fire');
@@ -571,7 +607,7 @@ export class LevelController {
     const q = this.question;
     if (!q || a.value === null) return;
     const { audio, effects, hud, field } = this.ctx;
-    const responseMs = Math.max(0, Math.round((this.simTime - this.qStart) * 1000));
+    const responseMs = this.responseMs(l);
     const correct = a.value === q.answer;
     const ev: AnswerEvent = { factId: q.factId, correct, responseMs, chosenValue: a.value };
     this.answers.push(ev);
@@ -792,6 +828,7 @@ export class LevelController {
   private respawn(): void {
     const p = this.safeSpawnPoint();
     this.ship.reset(p.x, p.y);
+    this.qHeading = this.ship.angle;
     this.ship.invuln = SHIP.invulnSec;
     this.ctx.input.consumeFirePress();
     this.fireCd = 0.2;

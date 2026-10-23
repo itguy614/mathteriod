@@ -119,7 +119,11 @@ export interface LevelConfig {
 export interface AnswerEvent {
   factId: string;
   correct: boolean;
-  /** Time from the question appearing to a laser hitting a numbered asteroid. */
+  /**
+   * Recall time: from the question appearing to the decision (the tap, or the
+   * firing of the bolt that hit), minus the ship's minimum turn time and time
+   * spent destroyed. See game/level.ts responseMs().
+   */
   responseMs: number;
   chosenValue: number;
 }
