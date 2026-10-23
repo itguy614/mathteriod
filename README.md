@@ -1,7 +1,8 @@
 # Mathteroid
 
 An Asteroids-style browser game for practicing arithmetic facts (+ − × ÷, 1–12).
-Shoot the asteroid carrying the answer; wrong answers split rocks, three collisions end a level.
+Shoot the asteroid carrying the answer. Levels are 3 waves; wrong answers split rocks and chip
+the hull, collisions cost a whole ship, and an empty hull ends the level.
 See [docs/VISION.md](docs/VISION.md) for the full product vision and roadmap.
 
 **Status:** Phase 1 prototype — game only, progress saved in the browser (`localStorage`).
@@ -23,6 +24,7 @@ when you press Ctrl-C (or the server exits). `preview:local` serves without touc
 the firewall.
 
 Game engine sandbox (loadout switcher, event log): `http://localhost:5173/src/game/dev.html`
+(`?start=1&stage=mul-easy&waves=reverse,classic` starts a real engine level with chosen waves)
 
 ## Layout
 

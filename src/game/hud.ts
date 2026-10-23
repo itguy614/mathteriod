@@ -146,26 +146,27 @@ export class Hud {
     this.hintEl.classList.remove('mt-hint--on');
   }
 
-  setLevel(levelNumber: number, stageName: string): void {
-    this.level.textContent = `Level ${levelNumber} · ${stageName}`;
+  setLevel(levelNumber: number, stageName: string, wave: { n: number; of: number } | null = null): void {
+    this.level.textContent = `Level ${levelNumber} · ${stageName}${wave ? ` · Wave ${wave.n}/${wave.of}` : ''}`;
   }
 
-  setQuestion(prompt: string | null): void {
-    if (prompt === null) {
+  /** Show the question as displayed text ("7 + 5 = ?", or "? = 24" in Reverse mode). */
+  setQuestion(text: string | null): void {
+    if (text === null) {
       this.banner.classList.remove('mt-hud-banner--on');
       return;
     }
     const revealing = this.banner.classList.contains('mt-hud-banner--reveal');
-    this.eq.textContent = `${prompt} = ?`;
+    this.eq.textContent = text;
     this.banner.classList.remove('mt-hud-banner--reveal');
     this.banner.classList.add('mt-hud-banner--on');
     // coming back from a reveal is the same question: no "new question" pop
     if (!revealing) this.bump('mt-hud-banner--new');
   }
 
-  /** Teaching moment after a wrong answer: the full fact in the teaching color. */
-  revealAnswer(prompt: string, answer: number): void {
-    this.eq.textContent = `${prompt} = ${answer}`;
+  /** Teaching moment after a wrong answer: the full fact ("7 × 8 = 56") in the teaching color. */
+  revealAnswer(text: string): void {
+    this.eq.textContent = text;
     this.banner.classList.add('mt-hud-banner--on', 'mt-hud-banner--reveal');
   }
 

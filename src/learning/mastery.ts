@@ -23,13 +23,14 @@ export const MASTERY = {
   /** Fraction of the stage's facts that must be covered... */
   coverage: 0.5,
   /**
-   * ...capped at this many facts. Levels only ask ~3-5 questions, so this sets the
-   * pace: ~3 levels per stage for a kid who knows the facts (~15 levels for all of
-   * addition). Playtest: the old 80%/40-facts/2-attempts gate took 85+ levels.
+   * ...capped at this many facts. A 3-wave level asks ~10-14 questions, so this
+   * sets the pace: ~1-2 levels per stage for a kid who knows the facts (~6-8 levels
+   * for all of addition). Playtest: the old 80%/40-facts/2-attempts gate took 85+
+   * (short) levels.
    */
   maxCoverageFacts: 12,
-  /** Minimum levels played in the stage (promotion also requires clearing the current one). */
-  minLevels: 2,
+  /** Minimum levels cleared in the stage (promotion also requires clearing the current one). */
+  minLevels: 1,
 };
 
 /**

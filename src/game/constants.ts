@@ -113,6 +113,8 @@ export const ASTEROID = {
   },
   /** Gap kept between two labels, and between a label and a touch control / hint pill (CSS px). */
   labelGapPx: 4,
+  /** Equation labels (Reverse mode) are wider, so they're drawn a bit shorter than numbers. */
+  equationLabelScale: 0.72,
 } as const;
 
 /** Level start: the field is empty, then the rocks fly in from off-screen. */
@@ -141,6 +143,13 @@ export const HULL = {
   repairStreak: 3,
   /** A held-fire burst into one wrong rock only costs one segment. */
   wrongGraceSec: 0.5,
+} as const;
+
+/** Between waves: a short breather, and a free hull repair. */
+export const WAVE = {
+  pauseSec: 2,
+  /** Hull segments repaired when a wave is cleared (never above full). */
+  repair: 1,
 } as const;
 
 /** Teaching feedback after a wrong answer. */

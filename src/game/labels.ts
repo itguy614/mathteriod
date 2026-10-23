@@ -45,10 +45,10 @@ export function makeLabelSprite(tex: THREE.Texture | null): THREE.Sprite {
 
 /**
  * Canvas textures for everything drawn in the (non-bloomed) overlay:
- * asteroid numbers (cached per value), ✓/✗ icons, and equation labels.
+ * asteroid numbers and equations (cached per text), ✓/✗ icons, and equation labels.
  */
 export class LabelFactory {
-  private numbers = new Map<number, { tex: THREE.CanvasTexture; aspect: number }>();
+  private numbers = new Map<string, { tex: THREE.CanvasTexture; aspect: number }>();
   private icons = new Map<string, THREE.CanvasTexture>();
   private speedy = new Map<number, { tex: THREE.CanvasTexture; aspect: number }>();
 
@@ -92,15 +92,16 @@ export class LabelFactory {
   }
 
   /**
-   * Number label texture (cached per value). The canvas widens for 2–3 digit
-   * numbers so every digit keeps the same glyph height: `aspect` is width/height.
+   * Rock label texture (cached per text): a number, or an equation in Reverse
+   * mode. The canvas widens with the text so every glyph keeps the same height:
+   * `aspect` is width/height.
    */
-  numberTexture(value: number): { tex: THREE.CanvasTexture; aspect: number } {
-    let entry = this.numbers.get(value);
+  numberTexture(value: number | string): { tex: THREE.CanvasTexture; aspect: number } {
+    const text = String(value);
+    let entry = this.numbers.get(text);
     if (entry) return entry;
     const H = 200;
     const px = 150;
-    const text = String(value);
     const measure = document.createElement('canvas').getContext('2d')!;
     measure.font = font(px);
     const tw = measure.measureText(text).width;
@@ -112,7 +113,7 @@ export class LabelFactory {
     const ctx = c.getContext('2d')!;
     drawOutlinedText(ctx, text, W / 2, H / 2 + px * 0.05, px);
     entry = { tex: makeTexture(c), aspect: W / H };
-    this.numbers.set(value, entry);
+    this.numbers.set(text, entry);
     return entry;
   }
 

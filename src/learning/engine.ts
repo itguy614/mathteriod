@@ -15,7 +15,9 @@ import type {
   Operation,
   Question,
   QuestionProvider,
+  ReverseProvider,
   StageDef,
+  WaveKind,
 } from '../types';
 import { allFacts, factById, makeFact } from './facts';
 import { STAGES } from './curriculum';
@@ -39,13 +41,18 @@ export const DIFFICULTY = {
   startSpeed: 2,
   endSpeed: 5,
   /** Levels played in a stage until the ramp reaches its end values. */
-  rampLevels: 12,
+  rampLevels: 4,
+  /** Waves per mission level (eased levels have fewer). Practice rounds are one wave. */
+  waves: 3,
+  easedWaves: 2,
   maxAsteroids: 8,
   easedMaxAsteroids: 6,
   /** Multiplier on count and speed for eased levels. */
   easeFactor: 0.7,
   /** Consecutive failures that trigger an eased level. */
   easeAfterFailures: 2,
+  /** Every Nth mission level in a stage has a Reverse middle wave (never an eased one). */
+  reverseEvery: 2,
 };
 
 /**
@@ -333,6 +340,105 @@ function neighborAnswers(factId: string): Set<number> {
 }
 
 // ---------------------------------------------------------------------------
+// Reverse mode provider
+// ---------------------------------------------------------------------------
+
+/**
+ * Reverse levels: rocks carry equations, the ship a target number. The opening
+ * field pairs up equations that share an answer (24 = 3×8 = 4×6) so most targets
+ * have several correct rocks; weaker facts are drawn more often.
+ */
+class ReverseFactProvider implements ReverseProvider {
+  private readonly weights = new Map<string, number>();
+  private readonly byAnswer = new Map<number, Fact[]>();
+
+  constructor(
+    private readonly stage: StageDef,
+    stats: Record<string, FactStat>,
+    private readonly rng: () => number,
+  ) {
+    for (const f of stage.facts) {
+      this.weights.set(f.id, factWeight(stats[f.id]));
+      const list = this.byAnswer.get(f.answer);
+      if (list) list.push(f);
+      else this.byAnswer.set(f.answer, [f]);
+    }
+  }
+
+  private w(f: Fact): number {
+    return this.weights.get(f.id) ?? 1;
+  }
+
+  /** Weighted pick from `pool`, skipping ids in `used`; null when nothing is left. */
+  private draw(pool: readonly Fact[], used: Set<string>): Fact | null {
+    const free = pool.filter((f) => !used.has(f.id));
+    const idx = weightedIndex(free.map((f) => this.w(f)), this.rng);
+    return idx >= 0 ? free[idx] : null;
+  }
+
+  initialFacts(count: number): Fact[] {
+    const out: Fact[] = [];
+    const used = new Set<string>();
+    const targets = new Set<number>();
+    const shared = [...this.byAnswer.entries()].filter(([, fs]) => fs.length >= 2);
+    while (out.length + 2 <= count) {
+      const open = shared.filter(([v]) => !targets.has(v));
+      const idx = weightedIndex(open.map(([, fs]) => fs.reduce((t, f) => t + this.w(f), 0)), this.rng);
+      if (idx < 0) break;
+      const [v, fs] = open[idx];
+      targets.add(v);
+      for (let k = 0; k < 2; k++) {
+        const f = this.draw(fs, used);
+        if (f) {
+          out.push(f);
+          used.add(f.id);
+        }
+      }
+    }
+    while (out.length < count) {
+      const f = this.draw(this.stage.facts, used) ?? this.stage.facts[Math.floor(this.rng() * this.stage.facts.length)];
+      out.push(f);
+      used.add(f.id);
+    }
+    // shuffle so pairs don't fly in side by side
+    for (let i = out.length - 1; i > 0; i--) {
+      const j = Math.floor(this.rng() * (i + 1));
+      [out[i], out[j]] = [out[j], out[i]];
+    }
+    return out;
+  }
+
+  pickTarget(liveFacts: Fact[]): number {
+    const groups = new Map<number, Fact[]>();
+    for (const f of liveFacts) {
+      const g = groups.get(f.answer);
+      if (g) g.push(f);
+      else groups.set(f.answer, [f]);
+    }
+    const entries = [...groups.entries()];
+    if (entries.length === 0) throw new Error('pickTarget needs at least one live rock');
+    // targets with more matching rocks first, then weaker facts
+    const idx = weightedIndex(entries.map(([, fs]) => fs.length * fs.length * fs.reduce((t, f) => t + this.w(f), 0)), this.rng);
+    return entries[idx >= 0 ? idx : 0][0];
+  }
+
+  splitFact(target: number, liveFacts: Fact[]): Fact {
+    const live = new Set(liveFacts.map((f) => f.id));
+    const pool = this.stage.facts.filter((f) => f.answer !== target && !live.has(f.id));
+    // near misses make the best distractors: 25 or 27 next to 24
+    const near = (f: Fact) => {
+      const d = Math.abs(f.answer - target);
+      return d <= 3 ? 4 / d : 0.3;
+    };
+    const idx = weightedIndex(pool.map((f) => near(f) * this.w(f)), this.rng);
+    if (idx >= 0) return pool[idx];
+    const any = this.stage.facts.filter((f) => f.answer !== target);
+    if (any.length > 0) return any[Math.floor(this.rng() * any.length)];
+    return constructFactForAnswer(target + 1, this.stage.op);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Mastery evaluation
 // ---------------------------------------------------------------------------
 
@@ -483,11 +589,15 @@ export class LearningEngine {
     const stage = this.currentStage();
     const eased = this.state.consecutiveFailures >= DIFFICULTY.easeAfterFailures;
     const pace = paceAt(clamp01(this.state.levelInStage / DIFFICULTY.rampLevels), eased);
+    const reverse = !eased && this.state.levelInStage % DIFFICULTY.reverseEvery === DIFFICULTY.reverseEvery - 1;
+    const waves: WaveKind[] = Array.from({ length: eased ? DIFFICULTY.easedWaves : DIFFICULTY.waves }, () => 'classic');
+    if (reverse) waves[waves.length >> 1] = 'reverse';
     return {
       stageId: stage.id,
       stageName: stage.name,
       levelNumber: this.state.levelsCleared + 1,
-      mode: 'classic',
+      waves,
+      reverse: reverse ? new ReverseFactProvider(stage, this.state.factStats, this.rng) : undefined,
       initialAsteroids: pace.count,
       asteroidSpeed: pace.speed,
       maxAsteroids: eased ? DIFFICULTY.easedMaxAsteroids : DIFFICULTY.maxAsteroids,
@@ -521,7 +631,7 @@ export class LearningEngine {
       stageId: stage.id,
       stageName: name,
       levelNumber: Math.max(1, Math.floor(opts.levelNumber ?? s + 1)),
-      mode: 'classic',
+      waves: ['classic'],
       initialAsteroids: pace.count,
       asteroidSpeed: pace.speed,
       maxAsteroids: DIFFICULTY.maxAsteroids,

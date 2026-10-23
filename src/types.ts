@@ -65,7 +65,12 @@ export interface LearningState {
 // Level setup (learning -> game)
 // ---------------------------------------------------------------------------
 
-export type LevelMode = 'classic' | 'swarm' | 'reverse'; // Phase 1 implements 'classic'
+/**
+ * A level is a run of waves; each wave flies in a fresh field and must be
+ * cleared before the next. 'classic': one equation, shoot the answer.
+ * 'reverse': one number, shoot every equation that makes it.
+ */
+export type WaveKind = 'classic' | 'reverse';
 
 export interface Question {
   factId: string;
@@ -95,13 +100,28 @@ export interface QuestionProvider {
   splitValue(current: Question, liveValues: number[]): number;
 }
 
+/**
+ * Reverse mode contract. Every asteroid carries an equation (a Fact); the ship
+ * shows a target number, and every rock whose equation equals it is correct.
+ * The target is ALWAYS the answer of at least one live rock.
+ */
+export interface ReverseProvider {
+  /** Equations to paint on the initial asteroids (length === count); targets with several equations are favoured. */
+  initialFacts(count: number): Fact[];
+  /** The next target number. MUST be the answer of one of `liveFacts`. */
+  pickTarget(liveFacts: Fact[]): number;
+  /** An equation for a rock spawned by a wrong-answer split; its answer should differ from `target`. */
+  splitFact(target: number, liveFacts: Fact[]): Fact;
+}
+
 export interface LevelConfig {
   stageId: string;
   stageName: string;
   /** Kid-facing level number (levelsCleared + 1). */
   levelNumber: number;
-  mode: LevelMode;
-  /** Large asteroids at start. */
+  /** Waves in play order (at least one). The hull carries over between waves. */
+  waves: WaveKind[];
+  /** Large asteroids at the start of each wave. */
   initialAsteroids: number;
   /** Base drift speed of large asteroids, world units per second (see game/ for scale). */
   asteroidSpeed: number;
@@ -110,6 +130,8 @@ export interface LevelConfig {
   /** True when difficulty was eased after repeated failures. */
   eased: boolean;
   questions: QuestionProvider;
+  /** Present when `waves` includes 'reverse'. */
+  reverse?: ReverseProvider;
 }
 
 // ---------------------------------------------------------------------------
@@ -117,6 +139,7 @@ export interface LevelConfig {
 // ---------------------------------------------------------------------------
 
 export interface AnswerEvent {
+  /** The question's fact; in Reverse mode, the equation on the rock that was hit. */
   factId: string;
   correct: boolean;
   /**

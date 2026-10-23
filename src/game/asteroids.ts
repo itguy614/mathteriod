@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import type { Fact } from '../types';
 import { ASTEROID, ENTRY, type AsteroidSize } from './constants';
 import { wrapCoord, type Graphics } from './graphics';
 import { makeLabelSprite, type LabelFactory } from './labels';
@@ -60,6 +61,8 @@ export class Asteroid {
   readonly vel = new THREE.Vector2();
   readonly radius: number;
   value: number | null;
+  /** Reverse mode: the equation shown on the rock (value is its answer). */
+  fact: Fact | null = null;
   label: THREE.Sprite | null = null;
   labelAspect = 1;
   alive = true;
@@ -385,8 +388,10 @@ export class AsteroidField {
     return a;
   }
 
-  setValue(a: Asteroid, value: number | null): void {
+  /** Show a number, or with `fact` (Reverse mode) that equation, whose answer must be `value`. */
+  setValue(a: Asteroid, value: number | null, fact: Fact | null = null): void {
     a.value = value;
+    a.fact = value === null ? null : fact;
     if (value === null) {
       if (a.label) {
         (a.label.material as THREE.SpriteMaterial).dispose();
@@ -395,7 +400,7 @@ export class AsteroidField {
       }
       return;
     }
-    const { tex, aspect } = this.labels.numberTexture(value);
+    const { tex, aspect } = this.labels.numberTexture(a.fact ? a.fact.text : value);
     if (!a.label) {
       a.label = makeLabelSprite(tex);
       this.gfx.overlay.add(a.label);
@@ -411,7 +416,7 @@ export class AsteroidField {
 
   private sizeLabel(a: Asteroid): void {
     if (!a.label) return;
-    const h = this.gfx.labelSize(ASTEROID.labelHeight[a.size], ASTEROID.labelMinPx[a.size]);
+    const h = this.gfx.labelSize(ASTEROID.labelHeight[a.size], ASTEROID.labelMinPx[a.size]) * (a.fact ? ASTEROID.equationLabelScale : 1);
     a.label.scale.set(h * a.labelAspect, h, 1);
   }
 

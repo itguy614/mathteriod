@@ -2,18 +2,21 @@ import * as THREE from 'three';
 import type {
   AnswerEvent,
   AudioBus,
+  Fact,
   GameCallbacks,
   LevelConfig,
   LevelOptions,
   LevelResult,
   Question,
+  ReverseProvider,
   ShipLoadout,
+  WaveKind,
 } from '../types';
 import { HITS_ALLOWED } from '../catalog';
 import type { Asteroid, AsteroidField } from './asteroids';
 import { circlesOverlap, segmentHitsCircle } from './collision';
 import { AimGuide } from './aimGuide';
-import { AIM_ASSIST, ASTEROID, ENTRY, HINT, HULL, LASER, LEVEL, REVEAL, SHIP, TAP_TARGET, type AsteroidSize } from './constants';
+import { AIM_ASSIST, ASTEROID, ENTRY, HINT, HULL, LASER, LEVEL, REVEAL, SHIP, TAP_TARGET, WAVE, type AsteroidSize } from './constants';
 import type { Effects } from './effects';
 import type { Graphics } from './graphics';
 import type { HintKind, HintPart, Hud, ShieldState } from './hud';
@@ -84,6 +87,12 @@ export class LevelController {
   private questionMisses = 0;
   /** Time left showing the revealed fact instead of "= ?". */
   private revealT = 0;
+  /** Reverse wave in play: rocks carry equations, the question is a target number. */
+  private reverse: ReverseProvider | null = null;
+  private waves: WaveKind[];
+  private waveIndex = 0;
+  /** Breather between waves; the next wave starts when it runs out. */
+  private betweenT = 0;
   /** Rock each bolt locked onto when fired (aim assist curves only toward it). */
   private laserTargets = new WeakMap<Laser, Asteroid>();
   private score = 0;
@@ -136,6 +145,7 @@ export class LevelController {
     lasers.setStyle(loadout.laser, loadout.laserColor);
     ctx.effects.clear();
 
+    this.waves = config.waves.length > 0 ? config.waves : ['classic'];
     this.ship = new Ship(loadout);
     this.ship.reset(0, 0);
     this.ship.shieldUp = loadout.perks.includes('shield');
@@ -147,7 +157,7 @@ export class LevelController {
     gfx.overlay.add(this.eqLabel);
     this.aimGuide = new AimGuide(gfx);
 
-    hud.setLevel(config.levelNumber, config.stageName);
+    hud.setLevel(config.levelNumber, config.stageName, this.waves.length > 1 ? { n: 1, of: this.waves.length } : null);
     this.updateHull();
     hud.setStreak(0, HULL.repairStreak);
     hud.setScore(0);
@@ -159,10 +169,50 @@ export class LevelController {
       hud.showHint(this.hintKind);
     }
 
-    // The field starts empty: rocks wait off-screen and fly in after the first question.
+    this.startWave(0);
+  }
+
+  /**
+   * Fly in wave `i`. The field starts empty: rocks wait off-screen and fly in
+   * after the first question.
+   */
+  private startWave(i: number): void {
+    const { field, hud, audio } = this.ctx;
+    this.waveIndex = i;
+    const kind = this.waves[i];
+    this.reverse = kind === 'reverse' ? (this.config.reverse ?? null) : null;
+    if (this.waves.length > 1) hud.setLevel(this.config.levelNumber, this.config.stageName, { n: i + 1, of: this.waves.length });
+    hud.setMessage(null);
     this.spawnInitial();
-    if (field.liveValues().length === 0) this.endLevel('cleared');
-    else this.nextQuestion();
+    if (field.liveValues().length === 0) {
+      this.waveCleared();
+      return;
+    }
+    if (i > 0 && this.reverse) audio.speak('Reverse! Shoot every equation that makes the number.');
+    this.nextQuestion();
+  }
+
+  /** The field is empty: next wave after a breather (with a free repair), or the level is cleared. */
+  private waveCleared(): void {
+    const next = this.waveIndex + 1;
+    if (next >= this.waves.length) {
+      this.endLevel('cleared');
+      return;
+    }
+    const { hud, audio, effects } = this.ctx;
+    this.question = null;
+    this.reverse = null;
+    this.setEquationLabel(null);
+    hud.setQuestion(null);
+    this.betweenT = WAVE.pauseSec;
+    const upNext = this.waves[next] === 'reverse' ? ' · Reverse!' : '';
+    hud.setMessage(`Wave ${next + 1} of ${this.waves.length}${upNext}`, 'clear');
+    audio.play('levelClear');
+    effects.fireworks(1);
+    if (this.damage > 0) {
+      this.damage = Math.max(0, this.damage - WAVE.repair);
+      this.updateHull('repair');
+    }
   }
 
   private baseSpeed(size: AsteroidSize): number {
@@ -178,8 +228,12 @@ export class LevelController {
     const { gfx, field } = this.ctx;
     const n = Math.max(0, Math.floor(this.config.initialAsteroids));
     let values: number[] = [];
+    let facts: Fact[] | null = null;
     try {
-      values = this.config.questions.initialValues(n).slice(0, n);
+      if (this.reverse) {
+        facts = this.reverse.initialFacts(n).slice(0, n);
+        values = facts.map((f) => f.answer);
+      } else values = this.config.questions.initialValues(n).slice(0, n);
     } catch (err) {
       console.error('[game] initialValues failed', err);
     }
@@ -231,7 +285,8 @@ export class LevelController {
       starts.push(new THREE.Vector2(best.x, best.y));
       const cruise = this.baseSpeed(3) * randRange(0.8, 1.15);
       const delay = ENTRY.firstDelay + (values.length > 1 ? i / (values.length - 1) : 0) * ENTRY.window + randRange(0, 0.15);
-      field.spawnEntering(3, values[i], best.x, best.y, best.ang, cruise, ENTRY.duration, delay);
+      const rock = field.spawnEntering(3, values[i], best.x, best.y, best.ang, cruise, ENTRY.duration, delay);
+      if (facts?.[i]) field.setValue(rock, values[i], facts[i]);
     }
   }
 
@@ -243,7 +298,7 @@ export class LevelController {
     const live = field.liveValues();
     let q: Question;
     try {
-      q = this.config.questions.pickQuestion(live);
+      q = this.reverse ? this.reverseQuestion(this.reverse.pickTarget(this.liveFacts())) : this.config.questions.pickQuestion(live);
     } catch (err) {
       console.error('[game] pickQuestion failed', err);
       return;
@@ -259,26 +314,42 @@ export class LevelController {
     this.startAnswerClock();
     this.questionMisses = 0;
     this.revealT = 0;
-    this.setEquationLabel(q.prompt);
-    this.ctx.hud.setQuestion(q.prompt);
+    this.setEquationLabel(this.questionText(q));
+    this.ctx.hud.setQuestion(this.questionText(q));
     this.safeCall(() => this.callbacks.onQuestion?.(q));
     this.ctx.audio.speak(q.speech);
   }
 
-  /** `answer` shows the full fact in the teaching color instead of "= ?". */
-  private setEquationLabel(prompt: string | null, answer: number | null = null): void {
+  /** Reverse mode "question": find every rock whose equation makes `target`. */
+  private reverseQuestion(target: number): Question {
+    return { factId: `target:${target}`, prompt: String(target), speech: `Find ${target}`, answer: target };
+  }
+
+  private liveFacts(): Fact[] {
+    const out: Fact[] = [];
+    for (const a of this.ctx.field.list) if (a.fact && a.value !== null) out.push(a.fact);
+    return out;
+  }
+
+  /** "7 + 5 = ?", or "? = 24" in Reverse mode. */
+  private questionText(q: Question): string {
+    return this.reverse ? `? = ${q.answer}` : `${q.prompt} = ?`;
+  }
+
+  /** `teach` draws it in the teaching color (a revealed fact). */
+  private setEquationLabel(text: string | null, teach = false): void {
     const mat = this.eqLabel.material as THREE.SpriteMaterial;
     if (this.eqTex) {
       this.eqTex.dispose();
       this.eqTex = null;
     }
-    if (prompt === null) {
+    if (text === null) {
       mat.map = null;
       this.eqLabel.visible = false;
       return;
     }
-    const accent = answer !== null ? REVEAL.color : this.ship.color.rainbow ? '#ffffff' : `#${this.ship.color.color.getHexString()}`;
-    const { tex, aspect } = this.ctx.labels.equationTexture(`${prompt} = ${answer ?? '?'}`, accent);
+    const accent = teach ? REVEAL.color : this.ship.color.rainbow ? '#ffffff' : `#${this.ship.color.color.getHexString()}`;
+    const { tex, aspect } = this.ctx.labels.equationTexture(text, accent);
     this.eqTex = tex;
     this.eqAspect = aspect;
     mat.map = tex;
@@ -288,14 +359,17 @@ export class LevelController {
   /**
    * After a wrong answer: show the full fact (and say it), then go back to
    * "= ?" so the kid still has to find and shoot the answer. Repeated misses
-   * also make the correct rock pulse.
+   * also make the correct rock pulse. In Reverse mode the fact is the equation
+   * on the rock that was hit ("5 × 5 = 25", not 24).
    */
-  private revealFact(q: Question): void {
+  private revealFact(q: Question, hit: Asteroid): void {
     this.questionMisses++;
     this.revealT = REVEAL.factSec;
-    this.setEquationLabel(q.prompt, q.answer);
-    this.ctx.hud.revealAnswer(q.prompt, q.answer);
-    this.ctx.audio.speak(`${q.speech} equals ${q.answer}`);
+    const fact = this.reverse ? hit.fact : null;
+    const text = fact ? `${fact.text} = ${fact.answer}` : `${q.prompt} = ${q.answer}`;
+    this.setEquationLabel(text, true);
+    this.ctx.hud.revealAnswer(text);
+    this.ctx.audio.speak(fact ? `${fact.speech} equals ${fact.answer}` : `${q.speech} equals ${q.answer}`);
   }
 
   private updateReveal(dt: number): void {
@@ -303,8 +377,8 @@ export class LevelController {
     if (this.revealT > 0) {
       this.revealT -= dt;
       if (this.revealT <= 0 && q && this.state === 'playing') {
-        this.setEquationLabel(q.prompt);
-        this.ctx.hud.setQuestion(q.prompt);
+        this.setEquationLabel(this.questionText(q));
+        this.ctx.hud.setQuestion(this.questionText(q));
       }
     }
     const hintOn = q !== null && this.state === 'playing' && this.questionMisses >= REVEAL.hintAfterMisses;
@@ -380,6 +454,10 @@ export class LevelController {
       if (this.respawnT <= 0) this.respawn();
     }
     field.update(dt);
+    if (this.betweenT > 0 && this.state === 'playing') {
+      this.betweenT -= dt;
+      if (this.betweenT <= 0) this.startWave(this.waveIndex + 1);
+    }
     this.wrongGrace = Math.max(0, this.wrongGrace - dt);
     this.updateReveal(dt);
     this.updateInvulnerability(dt);
@@ -609,7 +687,8 @@ export class LevelController {
     const { audio, effects, hud, field } = this.ctx;
     const responseMs = this.responseMs(l);
     const correct = a.value === q.answer;
-    const ev: AnswerEvent = { factId: q.factId, correct, responseMs, chosenValue: a.value };
+    // Reverse mode scores the equation on the rock: shooting 5×5 for 24 is a miss on 5×5
+    const ev: AnswerEvent = { factId: a.fact?.id ?? q.factId, correct, responseMs, chosenValue: a.value };
     this.answers.push(ev);
     this.safeCall(() => this.callbacks.onAnswer?.(ev));
 
@@ -636,8 +715,10 @@ export class LevelController {
       this.ctx.hud.setStreak(this.streak, HULL.repairStreak);
       if (this.streak % HULL.repairStreak === 0 && this.damage > 0) this.repairHull();
       field.remove(a);
-      if (field.liveValues().length > 0) this.nextQuestion();
-      else this.endLevel('cleared');
+      const live = field.liveValues();
+      if (live.length === 0) this.waveCleared();
+      else if (this.reverse && live.includes(q.answer)) this.startAnswerClock(); // more rocks make this number
+      else this.nextQuestion();
       return;
     }
 
@@ -650,7 +731,7 @@ export class LevelController {
     // a held-fire burst into one rock is one miss (the fact is still showing anyway)
     if (this.wrongGrace <= 0) {
       this.wrongGrace = HULL.wrongGraceSec;
-      this.revealFact(q);
+      this.revealFact(q, a);
       this.wrongAnswerDamage();
       if (this.state !== 'playing') return;
     }
@@ -673,6 +754,7 @@ export class LevelController {
     const size = (a.size - 1) as AsteroidSize;
     const canSpawnSecond = field.list.length < this.config.maxAsteroids;
     const parentValue = a.value;
+    const parentFact = a.fact;
     const { x, y } = a.pos;
     const baseAngle = a.vel.lengthSq() > 0.01 ? Math.atan2(a.vel.y, a.vel.x) : Math.atan2(dirY, dirX);
     // children barely speed up: their own base speed, never the parent's accumulated kicks
@@ -682,28 +764,32 @@ export class LevelController {
     effects.rockPuff(x, y, a.radius);
 
     const r = ASTEROID.radius[size];
-    const mk = (value: number, side: number) => {
+    const mk = (value: number, fact: Fact | null, side: number) => {
       const ang = baseAngle + side * randRange(ASTEROID.splitSpread[0], ASTEROID.splitSpread[1]);
       const s = sp * randRange(0.92, 1.05);
       const px = x + Math.cos(ang) * r * 0.7;
       const py = y + Math.sin(ang) * r * 0.7;
       const k = ASTEROID.splitKick;
       const child = field.spawn(size, value, px, py, Math.cos(ang) * s + dirX * k, Math.sin(ang) * s + dirY * k);
+      if (fact) field.setValue(child, value, fact);
       this.clampSpeed(child);
       child.shakeT = 0.45;
       child.flashT = 0.35;
       return child;
     };
-    mk(parentValue as number, 1);
+    mk(parentValue as number, parentFact, 1);
     if (canSpawnSecond) {
-      let v: number;
+      let v = parentValue as number;
+      let f: Fact | null = parentFact;
       try {
-        v = this.config.questions.splitValue(q, field.liveValues());
+        if (this.reverse) {
+          f = this.reverse.splitFact(q.answer, this.liveFacts());
+          v = f.answer;
+        } else v = this.config.questions.splitValue(q, field.liveValues());
       } catch (err) {
         console.error('[game] splitValue failed', err);
-        v = parentValue as number;
       }
-      mk(v, -1);
+      mk(v, f, -1);
     }
   }
 

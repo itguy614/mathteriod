@@ -3,7 +3,8 @@
  * Stub question provider (addition facts), console audio, loadout switcher.
  */
 import { CATALOG } from '../catalog';
-import type { AudioBus, ControlMode, LevelConfig, LevelOptions, Question, QuestionProvider, ShipLoadout, TouchMode } from '../types';
+import type { AudioBus, ControlMode, LevelConfig, LevelOptions, Question, QuestionProvider, ShipLoadout, TouchMode, WaveKind } from '../types';
+import { LearningEngine, initialLearningState, stageIndexById } from '../learning/index';
 import { createGame } from './index';
 
 const logEl = () => document.getElementById('dev-log');
@@ -126,12 +127,20 @@ const game = createGame($('game-root'), audio);
 let mode: 'idle' | 'level' | 'hangar' = 'idle';
 (window as unknown as { game: typeof game }).game = game;
 
-function start(): void {
-  const config: LevelConfig = {
+/** ?stage=mul-easy[&waves=reverse,classic]: a real mission level from the learning engine. */
+function engineLevel(stageId: string, waves: string | null): LevelConfig {
+  const state = { ...initialLearningState(), stageIndex: Math.max(0, stageIndexById(stageId)), levelInStage: 1 };
+  const config = new LearningEngine(state).buildLevel();
+  if (waves) config.waves = waves.split(',').filter((w): w is WaveKind => w === 'classic' || w === 'reverse');
+  return { ...config, initialAsteroids: num('d-count'), asteroidSpeed: num('d-speed') };
+}
+
+function start(override?: LevelConfig): void {
+  const config: LevelConfig = override ?? {
     stageId: 'dev-add',
     stageName: 'Addition: Launch Pad',
     levelNumber: num('d-level'),
-    mode: 'classic',
+    waves: ['classic'],
     initialAsteroids: num('d-count'),
     asteroidSpeed: num('d-speed'),
     maxAsteroids: num('d-max'),
@@ -154,7 +163,7 @@ function start(): void {
   (document.activeElement as HTMLElement | null)?.blur();
 }
 
-$('d-start').addEventListener('click', start);
+$('d-start').addEventListener('click', () => start());
 function center(): { x: number; y: number } {
   const [x, y] = $<HTMLInputElement>('d-center').value.split(',').map(Number);
   return { x: x || 0.5, y: y || 0.5 };
@@ -205,5 +214,6 @@ if (hb !== null) {
   }
   const lz = params.get('laser');
   if (lz) $<HTMLSelectElement>('d-laser').value = lz;
-  start();
+  const stage = params.get('stage');
+  start(stage ? engineLevel(stage, params.get('waves')) : undefined);
 }

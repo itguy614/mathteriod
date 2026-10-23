@@ -9,6 +9,8 @@ import type { Screen } from '../router';
 export function levelIntroScreen(opts: { config: LevelConfig; audio: AudioBus; kicker?: string; title?: string; onDone(): void }): Screen {
   const { config } = opts;
   const kicker = opts.kicker ?? `Level ${config.levelNumber}`;
+  const reverse = config.waves.includes('reverse');
+  const waves = config.waves.length;
   const count = h('div', { class: 'countdown', 'aria-live': 'assertive' });
   const el = h(
     'div',
@@ -19,6 +21,15 @@ export function levelIntroScreen(opts: { config: LevelConfig; audio: AudioBus; k
       h('div', { class: 'intro-level' }, kicker),
       h('div', { class: 'intro-stage' }, opts.title ?? config.stageName),
       config.eased ? h('div', { class: 'intro-eased' }, h('span', { 'aria-hidden': 'true' }, '🌱'), ' Warm-up round') : null,
+      waves > 1 ? h('div', { class: 'intro-waves' }, `${waves} waves`) : null,
+      reverse
+        ? h(
+            'div',
+            { class: 'intro-mode' },
+            h('strong', null, h('span', { 'aria-hidden': 'true' }, '🔄'), ` Wave ${config.waves.indexOf('reverse') + 1} is Reverse!`),
+            h('span', null, 'Shoot every equation that makes the number.'),
+          )
+        : null,
     ),
     count,
   );
@@ -40,7 +51,8 @@ export function levelIntroScreen(opts: { config: LevelConfig; audio: AudioBus; k
     el,
     passThrough: true,
     onEnter() {
-      opts.audio.speak(opts.kicker ? (opts.title ?? 'Practice') : kicker);
+      const intro = opts.kicker ? (opts.title ?? 'Practice') : kicker;
+      opts.audio.speak(intro);
       const steps = ['3', '2', '1'];
       steps.forEach((s, i) => {
         timers.push(

@@ -1021,6 +1021,31 @@ button {
   text-shadow: var(--glow-magenta);
 }
 
+.intro-waves {
+  margin-top: 6px;
+  font-weight: 700;
+  color: var(--text-dim);
+  letter-spacing: 0.04em;
+}
+
+.intro-mode {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 10px;
+  padding: 10px 16px;
+  border-radius: var(--radius-sm);
+  border: 1.5px solid var(--cyan);
+  background: rgba(34, 228, 255, 0.1);
+  font-size: 1.15rem;
+}
+
+.intro-mode strong {
+  font-family: var(--font-head);
+  font-size: 1.4rem;
+  color: var(--cyan);
+}
+
 .intro-eased {
   margin-top: 10px;
   display: inline-block;

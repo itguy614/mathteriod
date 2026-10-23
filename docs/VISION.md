@@ -20,7 +20,11 @@ Promotion comes only when a child has actually mastered a set of facts.
 - **Flight:** Classic Asteroids movement (rotate, thrust, drift, screen wrap), with shooting.
   - Keyboard: arrows/WASD + space.
   - Touch: virtual joystick + fire button (auto-detected).
-- **Win a level:** Clear every asteroid from the field.
+- **Waves:** A mission level is 3 waves (2 on an eased level). Each wave flies in a fresh field
+  of 3–5 rocks; clear it and the next wave arrives after a short breather that also repairs a
+  third of the hull. About 10–14 questions per level, without crowding the screen (an early
+  playtest showed more rocks at once turns the game into dodging). Practice rounds are 1 wave.
+- **Win a level:** Clear every wave.
 - **Hull:** Three ship icons, each split into thirds. A collision costs a whole ship; a wrong
   answer costs a third. Three correct answers in a row repair a third (never past three ships).
 - **Wrong answer:** Shooting a wrong asteroid **splits it into two smaller asteroids**, so the
@@ -46,6 +50,10 @@ Promotion comes only when a child has actually mastered a set of facts.
 | **Classic** | One equation (`7 + 5`) | The single asteroid showing the answer; a new equation follows |
 | **Swarm** | One equation | Every asteroid carrying the answer, then the equation changes |
 | **Reverse** | A number (`24`) | Asteroids whose equation equals it (`3×8`, `4×6`, `12×2`) |
+
+**Built so far:** Classic, and Reverse as the middle wave of every 2nd mission level (never on
+an eased level). In Reverse, hitting `3×8` for 24 counts as a correct answer for 3×8; hitting
+`5×5` counts as a miss on 5×5, and the reveal shows `5 × 5 = 25`.
 
 ## Learning model
 

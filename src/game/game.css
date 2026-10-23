@@ -112,7 +112,7 @@
 .mt-hud-life--part { position: relative; }
 .mt-hud-life-base,
 .mt-hud-life-fill { position: absolute; inset: 0; display: flex; }
-.mt-hud-life-base { color: #3b4258; opacity: 0.55; filter: none; }
+.mt-hud-life-base { color: #8a2c44; opacity: 0.85; filter: none; }
 .mt-hud-hull--damage { animation: mt-hull-damage 0.45s ease-out; }
 .mt-hud-hull--repair { animation: mt-hull-repair 0.6s ease-out; }
 @keyframes mt-hull-damage {

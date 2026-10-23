@@ -67,7 +67,7 @@ describe('LearningEngine basics', () => {
 
   it('builds a classic level with an easy start and ramps difficulty', () => {
     const first = new LearningEngine(stateAt(0)).buildLevel();
-    expect(first.mode).toBe('classic');
+    expect(first.waves).toEqual(['classic', 'classic', 'classic']);
     expect(first.stageId).toBe(STAGES[0].id);
     expect(first.levelNumber).toBe(1);
     expect(first.initialAsteroids).toBe(3);
@@ -263,14 +263,16 @@ describe('adaptive weighting', () => {
 describe('promotion', () => {
   it('promotes after simulated mastery, not before', () => {
     const engine = new LearningEngine(stateAt(0), seeded(12));
-    // Level 1: every fact correct and fast, but only 1 attempt each and 1 level.
-    let s = engine.recordLevel(level('cleared', answerAll(0, 2000)));
+    const all = answerAll(0, 2000);
+    const required = Math.min(Math.ceil(all.length * MASTERY.coverage), MASTERY.maxCoverageFacts);
+    // Level 1: correct and fast, but too few different facts seen.
+    let s = engine.recordLevel(level('cleared', all.slice(0, required - 1)));
     expect(s.promoted).toBe(false);
     expect(s.stageProgress).toBeGreaterThan(0);
     expect(s.stageProgress).toBeLessThan(1);
     const p1 = s.stageProgress;
-    // Level 2: second attempt at each → gate met on a cleared level.
-    s = engine.recordLevel(level('cleared', answerAll(0, 2000)));
+    // Level 2: coverage reached → gate met on a cleared level.
+    s = engine.recordLevel(level('cleared', all.slice(required - 1)));
     expect(s.promoted).toBe(true);
     expect(s.newStageName).toBe(STAGES[1].name);
     expect(s.stageProgress).toBe(1);
@@ -300,11 +302,10 @@ describe('promotion', () => {
 
   it('only promotes after enough cleared levels (failed ones do not count)', () => {
     const engine = new LearningEngine(stateAt(0), seeded(15));
-    engine.recordLevel(level('cleared', answerAll(0, 1500)));
     const failed = engine.recordLevel(level('failed', answerAll(0, 1500)));
     expect(failed.promoted).toBe(false);
-    expect(engine.getState().clearedInStage).toBe(1);
-    expect(engine.stageProgress()).toBeLessThan(1); // facts mastered, one more clear needed
+    expect(engine.getState().clearedInStage).toBe(0);
+    expect(engine.stageProgress()).toBeLessThan(1); // facts mastered, a clear still needed
     const cleared = engine.recordLevel(level('cleared', []));
     expect(cleared.promoted).toBe(true);
   });
@@ -314,7 +315,6 @@ describe('promotion', () => {
     const engine = new LearningEngine(stateAt(idx), seeded(16));
     const some = STAGES[idx].facts.slice(0, MASTERY.maxCoverageFacts);
     const answers = some.map((f) => ({ factId: f.id, correct: true, responseMs: 1500, chosenValue: f.answer }));
-    engine.recordLevel(level('cleared', answers));
     expect(engine.recordLevel(level('cleared', answers)).promoted).toBe(true);
   });
 
@@ -331,7 +331,7 @@ describe('promotion', () => {
   it('stageProgress grows with practice', () => {
     const engine = new LearningEngine(stateAt(2), seeded(18));
     const p0 = engine.stageProgress();
-    engine.recordLevel(level('cleared', answerAll(2, 2500).slice(0, 20)));
+    engine.recordLevel(level('cleared', answerAll(2, 2500).slice(0, 5)));
     const p1 = engine.stageProgress();
     expect(p0).toBeGreaterThanOrEqual(0);
     expect(p1).toBeGreaterThan(p0);
@@ -340,20 +340,33 @@ describe('promotion', () => {
 });
 
 describe('pace (playtest: level 74 and still on addition)', () => {
-  /** Play one level as a kid who answers every question right, first try, in `ms`. */
+  /** Play every wave of one level as a kid who answers every question right, first try, in `ms`. */
   function playPerfectLevel(engine: LearningEngine, ms: number): void {
     const config = engine.buildLevel();
-    const live = config.questions.initialValues(config.initialAsteroids);
     const answers: AnswerEvent[] = [];
-    while (live.length > 0) {
-      const q = config.questions.pickQuestion(live);
-      live.splice(live.indexOf(q.answer), 1);
-      answers.push({ factId: q.factId, correct: true, responseMs: ms, chosenValue: q.answer });
+    for (const wave of config.waves) {
+      if (wave === 'reverse') {
+        const live = config.reverse!.initialFacts(config.initialAsteroids);
+        while (live.length > 0) {
+          const target = config.reverse!.pickTarget(live);
+          for (const f of live.filter((x) => x.answer === target)) {
+            live.splice(live.indexOf(f), 1);
+            answers.push({ factId: f.id, correct: true, responseMs: ms, chosenValue: target });
+          }
+        }
+        continue;
+      }
+      const live = config.questions.initialValues(config.initialAsteroids);
+      while (live.length > 0) {
+        const q = config.questions.pickQuestion(live);
+        live.splice(live.indexOf(q.answer), 1);
+        answers.push({ factId: q.factId, correct: true, responseMs: ms, chosenValue: q.answer });
+      }
     }
     engine.recordLevel(level('cleared', answers));
   }
 
-  it('a kid who knows addition reaches subtraction in about 15 levels', () => {
+  it('a kid who knows addition reaches subtraction in about 6-8 three-wave levels', () => {
     const firstSub = STAGES.findIndex((s) => s.op === 'sub');
     for (const seed of [1, 2, 3, 4, 5]) {
       const engine = new LearningEngine(initialLearningState(), seeded(seed));
@@ -362,8 +375,8 @@ describe('pace (playtest: level 74 and still on addition)', () => {
         playPerfectLevel(engine, 2000);
         levels++;
       }
-      expect(levels).toBeGreaterThanOrEqual(10);
-      expect(levels).toBeLessThanOrEqual(22);
+      expect(levels).toBeGreaterThanOrEqual(5);
+      expect(levels).toBeLessThanOrEqual(10);
     }
   });
 
@@ -428,5 +441,49 @@ describe('spaced review', () => {
     const due = stateAt(mulStage, { factStats: { [add85]: stat([true, true, true], NOW - 8 * DAY) } });
     const cfg = new LearningEngine(due, seeded(3), () => NOW).buildPracticeLevel(['mul:7'], 0);
     expect(cfg.questions.initialValues(200)).not.toContain(13);
+  });
+});
+
+describe('reverse mode', () => {
+  const mulStage = stageIndexById('mul-easy');
+
+  it('every 2nd mission level has a Reverse middle wave; eased levels and practice never do', () => {
+    const middle = [0, 1, 2, 3].map((levelInStage) => new LearningEngine(stateAt(mulStage, { levelInStage }), seeded(1)).buildLevel().waves);
+    expect(middle).toEqual([
+      ['classic', 'classic', 'classic'],
+      ['classic', 'reverse', 'classic'],
+      ['classic', 'classic', 'classic'],
+      ['classic', 'reverse', 'classic'],
+    ]);
+    const withRev = new LearningEngine(stateAt(mulStage, { levelInStage: 1 }), seeded(1)).buildLevel();
+    expect(withRev.reverse).toBeDefined();
+    const eased = new LearningEngine(stateAt(mulStage, { levelInStage: 1, consecutiveFailures: DIFFICULTY.easeAfterFailures }), seeded(1)).buildLevel();
+    expect(eased.waves).toEqual(['classic', 'classic']);
+    expect(new LearningEngine(stateAt(mulStage, { levelInStage: 1 }), seeded(1)).buildPracticeLevel(['mul:7'], 3).waves).toEqual(['classic']);
+  });
+
+  it('opening field pairs equations that share an answer', () => {
+    for (let seed = 1; seed <= 20; seed++) {
+      const cfg = new LearningEngine(stateAt(mulStage, { levelInStage: 1 }), seeded(seed)).buildLevel();
+      const facts = cfg.reverse!.initialFacts(5);
+      expect(facts).toHaveLength(5);
+      expect(new Set(facts.map((f) => f.id)).size).toBe(5);
+      const counts = new Map<number, number>();
+      for (const f of facts) counts.set(f.answer, (counts.get(f.answer) ?? 0) + 1);
+      expect([...counts.values()].filter((c) => c >= 2).length).toBeGreaterThanOrEqual(2);
+    }
+  });
+
+  it('targets are always a live answer; split equations are distractors', () => {
+    const cfg = new LearningEngine(stateAt(stageIndexById('add-small'), { levelInStage: 1 }), seeded(7)).buildLevel();
+    const rev = cfg.reverse!;
+    for (let i = 0; i < 50; i++) {
+      const live = rev.initialFacts(4);
+      const target = rev.pickTarget(live);
+      expect(live.map((f) => f.answer)).toContain(target);
+      const split = rev.splitFact(target, live);
+      expect(split.answer).not.toBe(target);
+      expect(live.map((f) => f.id)).not.toContain(split.id);
+    }
   });
 });
