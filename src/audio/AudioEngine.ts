@@ -1,7 +1,7 @@
 import type { AudioBus, Settings, SfxName } from '../types';
 import { MusicSequencer } from './music';
 import { SFX } from './sfx';
-import { cancelSpeech, speakNow } from './speech';
+import { cancelSpeech, primeSpeech, speakNow } from './speech';
 import { createNoiseBuffer } from './synth';
 
 type Ctor = typeof AudioContext;
@@ -137,8 +137,22 @@ export class AudioEngine implements AudioBus {
   private installUnlock(): void {
     if (typeof window === 'undefined') return;
     const events = ['pointerdown', 'keydown', 'touchend'] as const;
+    // iOS: play through the ringer/silent switch like a game, not like a ringtone (Safari 17+)
+    const session = (navigator as Navigator & { audioSession?: { type: string } }).audioSession;
+    if (session) {
+      try {
+        session.type = 'playback';
+      } catch {
+        /* older Safari: ignore */
+      }
+    }
+    let primed = false;
     const unlock = () => {
       this.unlocked = true;
+      if (!primed) {
+        primed = true;
+        primeSpeech();
+      }
       const ctx = this.ensure();
       if (ctx && ctx.state === 'running') {
         events.forEach((e) => window.removeEventListener(e, unlock, true));
@@ -150,7 +164,8 @@ export class AudioEngine implements AudioBus {
   /** Create (or resume) the AudioContext. Returns null before the first gesture. */
   private ensure(): AudioContext | null {
     if (this.ctx) {
-      if (this.ctx.state === 'suspended' && this.unlocked && !document.hidden) {
+      // iOS reports 'interrupted' after a call or the app going to the background
+      if ((this.ctx.state as string) !== 'running' && this.unlocked && !document.hidden) {
         void this.ctx.resume().catch(() => {});
       }
       return this.ctx;

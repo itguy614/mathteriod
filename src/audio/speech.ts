@@ -60,6 +60,21 @@ export function speakNow(text: string): void {
   }
 }
 
+/**
+ * iOS only lets speech start from a tap until it has spoken once: call this from
+ * a user gesture to say nothing, so later (timer-driven) speech is allowed.
+ */
+export function primeSpeech(): void {
+  if (!speechSupported()) return;
+  try {
+    const u = new SpeechSynthesisUtterance(' ');
+    u.volume = 0;
+    window.speechSynthesis.speak(u);
+  } catch {
+    /* ignore */
+  }
+}
+
 export function cancelSpeech(): void {
   if (!speechSupported()) return;
   try {

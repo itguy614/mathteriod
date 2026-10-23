@@ -34,6 +34,13 @@ Every push to `main` runs `.github/workflows/pages.yml`: tests, a production bui
 Actions tab with "Run workflow". Profiles live in each player's browser (`localStorage`), so the
 published site and a local dev server keep separate pilots.
 
+## On iPhone / iPad
+
+Open the site in Safari, then **Share → Add to Home Screen**: Mathteroid opens full-screen
+like an app (no Safari bars, no accidental swipe-back), with its own icon. It still needs the
+internet. Pilots saved in Safari and in the home-screen app are separate (iOS keeps their
+storage apart).
+
 ## Layout
 
 | Path | What |

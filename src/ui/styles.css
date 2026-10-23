@@ -1159,6 +1159,15 @@ button {
   animation: intro-in 500ms cubic-bezier(0.2, 1.3, 0.4, 1) both;
 }
 
+.results-main,
+.results-side {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+}
+
 .results-title {
   margin: 0;
   font-family: var(--font-head);
@@ -2368,4 +2377,274 @@ button {
 .galaxy-tip {
   font-size: 0.85rem;
   color: var(--text-dim);
+}
+
+/* ==========================================================================
+   Phones (iPhone pass): short screens, sticky actions
+   ========================================================================== */
+
+/* Results: the action buttons stay in view at the bottom of the panel, however
+   much (badges, facts to practice) sits above them. */
+.results-actions {
+  position: sticky;
+  bottom: -20px;
+  margin: 0 -20px -20px;
+  width: calc(100% + 40px);
+  padding: 14px 20px 20px;
+  background: linear-gradient(to bottom, rgba(14, 10, 44, 0), rgba(14, 10, 44, 0.96) 28%);
+  border-radius: 0 0 var(--radius) var(--radius);
+  z-index: 1;
+}
+
+/* Practice: the Start bar reads as a footer, not a button floating on the tiles. */
+.practice-bar {
+  margin: 0 -20px -20px;
+  padding: 12px 20px 20px;
+  background: linear-gradient(to bottom, rgba(14, 10, 44, 0), rgba(14, 10, 44, 0.96) 30%);
+  border-radius: 0 0 var(--radius) var(--radius);
+  z-index: 1;
+}
+
+/* Logo and level title shrink with the screen height too, not just the width. */
+.logo {
+  font-size: clamp(2.2rem, min(12vw, 13vh), 7rem);
+}
+
+.intro-level {
+  font-size: clamp(2rem, min(10vw, 12vh), 5rem);
+}
+
+/* Short screens (landscape phones; small portrait phones in Safari). */
+@media (max-height: 500px) {
+  .tagline {
+    display: none;
+  }
+
+  .start-screen {
+    gap: 8px;
+    padding-top: calc(12px + var(--safe-t));
+  }
+
+  .start-prompt {
+    margin-top: 0;
+  }
+
+  .pilot-grid {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 10px;
+  }
+
+  .pilot-tile {
+    aspect-ratio: auto;
+    min-height: 104px;
+    gap: 2px;
+    padding: 8px;
+  }
+
+  .pilot-tile-ship {
+    font-size: 2.2rem;
+  }
+
+  .start-screen .start-new {
+    margin-top: 8px;
+  }
+
+  /* Base: a compact dock so Launch, Practice, Hangar and Badges all fit */
+  .home-dock {
+    gap: 8px;
+  }
+
+  .home-dock .stage-card {
+    gap: 3px;
+  }
+
+  .home-dock .best,
+  .home-dock .galaxy-tip {
+    display: none;
+  }
+
+  .home-dock .launch-row .launch-btn {
+    min-height: 56px;
+  }
+
+  .home-dock .practice-btn {
+    min-height: 56px;
+  }
+
+  .home-dock .nav-row .btn {
+    min-height: 46px;
+    font-size: 1.05rem;
+  }
+
+  .galaxy-note {
+    font-size: 0.95rem;
+    padding: 6px 14px;
+  }
+
+  /* Results: smaller headline pieces, badge rows without their how-to line */
+  .results-panel,
+  .results-main,
+  .results-side {
+    gap: 10px;
+  }
+
+  .results-title {
+    font-size: 1.4rem;
+    padding: 2px 12px;
+  }
+
+  .stars {
+    font-size: 2.6rem;
+  }
+
+  .new-badge-text span {
+    display: none;
+  }
+
+  .new-badge .badge-icon {
+    width: 38px;
+    height: 38px;
+    font-size: 1.25rem;
+  }
+}
+
+/* Landscape phones: results split into two columns so nothing hides below the fold. */
+@media (orientation: landscape) and (max-height: 500px) {
+  .results-panel {
+    width: min(880px, 100%);
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    align-items: start;
+    column-gap: 18px;
+  }
+
+  .results-panel:not(:has(.results-side)) > .results-main {
+    grid-column: 1 / -1;
+  }
+
+  .results-panel > .results-actions {
+    grid-column: 1 / -1;
+  }
+}
+
+/* Short screens, continued: the countdown sizes by height too; practice and
+   results compact enough that nothing important hides under a footer. */
+.countdown {
+  font-size: clamp(3rem, min(20vw, 24vh), 9rem);
+}
+
+@media (max-height: 500px) {
+  .intro {
+    gap: 10px;
+  }
+
+  .needs-tile {
+    min-height: 44px;
+    padding-top: 4px;
+    padding-bottom: 4px;
+  }
+
+  .needs-sub {
+    display: none;
+  }
+
+  .op-tab {
+    min-height: 40px;
+  }
+
+  .skill-tile {
+    min-height: 52px;
+  }
+
+  .practice-legend {
+    display: none;
+  }
+
+  .stars {
+    font-size: 2.2rem;
+  }
+
+  .stat {
+    min-width: 88px;
+    padding: 6px 10px;
+  }
+
+  .stat-value {
+    font-size: 1.3rem;
+  }
+}
+
+/* Landscape phones: all 12 skill tiles in one row, so Start never covers any. */
+@media (orientation: landscape) and (max-height: 500px) {
+  .skill-grid {
+    grid-template-columns: repeat(12, 1fr);
+    gap: 5px;
+  }
+
+  .skill-tile {
+    padding-left: 2px;
+    padding-right: 2px;
+  }
+
+  .skill-label {
+    font-size: 1.05rem;
+  }
+}
+
+/* Hangar: the item grid is what shrinks and scrolls, so the chosen item's
+   details and its Buy / Equip button always stay on screen. */
+.page.hangar {
+  overflow: hidden;
+}
+
+.page.hangar > .preview-space {
+  min-height: 16vh;
+}
+
+.hangar-dock {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.hangar-dock > .tabs,
+.hangar-dock > .item-detail {
+  flex: none;
+}
+
+.hangar-dock > .item-grid {
+  flex: 0 1 auto;
+  min-height: 92px;
+}
+
+@media (orientation: landscape) and (max-height: 500px) {
+  .page:has(.preview-space) > .hangar-dock {
+    overflow: hidden;
+  }
+
+  .hangar-dock > .item-grid {
+    flex: 1 1 auto;
+    max-height: none;
+    grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+  }
+
+  .hangar-dock .detail-desc {
+    display: none;
+  }
+}
+
+/* Phones: the results buttons fit on one row of the sticky footer. */
+@media (max-width: 560px), (max-height: 500px) {
+  .results-actions {
+    flex-wrap: nowrap;
+    gap: 8px;
+  }
+
+  .results-actions .btn {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 52px;
+    padding: 0 8px;
+    font-size: 1.05rem;
+  }
 }

@@ -48,6 +48,13 @@ const router = new Router(uiRoot);
 // Music is requested up-front; AudioEngine starts it on the first user gesture.
 audio.startMusic();
 
+// iOS Safari ignores user-scalable=no: block pinch-zoom and double-tap zoom so a
+// fast double tap on a rock (or a two-finger touch) never zooms the game.
+for (const type of ['gesturestart', 'gesturechange', 'gestureend'] as const) {
+  document.addEventListener(type, (e) => e.preventDefault(), { passive: false });
+}
+document.addEventListener('dblclick', (e) => e.preventDefault(), { passive: false });
+
 // Every UI button gets a soft click (AudioEngine throttles duplicates).
 uiRoot.addEventListener('click', (e) => {
   const btn = (e.target as HTMLElement | null)?.closest('button');
